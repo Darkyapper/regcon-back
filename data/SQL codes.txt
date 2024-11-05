@@ -1,0 +1,71 @@
+-- Creation of the RegCon database
+
+-- Users table
+CREATE TABLE Users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT,
+    registration_date DATE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Events table
+CREATE TABLE Events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    event_date DATE NOT NULL,
+    location TEXT NOT NULL,
+    description TEXT
+);
+
+-- TicketCategories table (Ticket Categories)
+CREATE TABLE TicketCategories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    description TEXT
+);
+
+-- Tickets table
+CREATE TABLE Tickets (
+    code TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category_id INTEGER,
+    status TEXT NOT NULL,
+    FOREIGN KEY (category_id) REFERENCES TicketCategories(id)
+);
+
+-- Registration table
+CREATE TABLE Registration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    event_id INTEGER,
+    ticket_code TEXT,
+    registration_date DATE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id),
+    FOREIGN KEY (event_id) REFERENCES Events(id),
+    FOREIGN KEY (ticket_code) REFERENCES Tickets(code)
+);
+
+-- Admin table
+CREATE TABLE Admin (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT,
+    type_id INTEGER,
+    group_name TEXT,
+    description TEXT,
+    registration_date DATE DEFAULT CURRENT_TIMESTAMP,
+    password TEXT NOT NULL,
+    admin_type INTEGER,
+    FOREIGN KEY (type_id) REFERENCES AdminTypes(id)
+);
+
+-- AdminTypes table
+CREATE TABLE AdminTypes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+);
