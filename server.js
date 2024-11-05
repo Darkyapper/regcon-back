@@ -29,11 +29,11 @@ app.use(express.json());
 
 // Configuración de conexión a Supabase PostgreSQL
 const pool = new Pool({
-    host: 'aws-0-us-west-1.pooler.supabase.com',
-    user: 'postgres.vfwkmxsgdsnpdtebeize',
-    password: 'R4dI@-JKdaNCE',
-    database: 'postgres',
-    port: 6543,
+    host: process.env.DB_HOST, // Cambia esto a tu variable de entorno
+    user: process.env.DB_USER, // Cambia esto a tu variable de entorno
+    password: process.env.DB_PASSWORD, // Cambia esto a tu variable de entorno
+    database: process.env.DB_NAME, // Cambia esto a tu variable de entorno
+    port: process.env.DB_PORT || 5432, // Cambia esto a tu variable de entorno
     ssl: { rejectUnauthorized: false }
 });
 
