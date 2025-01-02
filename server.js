@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -742,13 +743,13 @@ app.post('/login', async (req, res) => {
         const admin = await query('SELECT * FROM Admin WHERE email = $1', [email]);
 
         if (admin.length === 0) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
         }
 
         // Verificar la contraseña
         const isMatch = await bcrypt.compare(password, admin[0].password);
         if (!isMatch) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
         }
 
         // Obtener el workgroup_id de la tabla membership
