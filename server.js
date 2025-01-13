@@ -170,11 +170,73 @@ app.post('/events', async (req, res) => {
 });
 
 app.get('/events', async (req, res) => {
-    const { workgroup_id } = req.query; // Obtén el workgroup_id de la consulta
+    try {
+        // Obtener los parámetros de paginación (con valores por defecto)
+        const limit = parseInt(req.query.limit) || 100; // Por defecto, 100 registros por página
+        const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
+
+        // Consulta SQL con paginación
+        const queryText = 'SELECT * FROM Events ORDER BY id LIMIT $1 OFFSET $2';
+        const queryParams = [limit, offset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams); // Cambio aquí: no desestructurar
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron eventos.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows, // Asegúrate de que los datos estén aquí
+            pagination: {
+                limit: limit,
+                offset: offset,
+                next_offset: offset + limit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/events', async (req, res) => {
+    const { workgroup_id, limit, offset } = req.query; // Obtén los parámetros de la consulta
 
     try {
-        const rows = await query('SELECT * FROM Events WHERE workgroup_id = $1', [workgroup_id]);
-        res.json({ message: 'Success', data: rows });
+        // Convertir limit y offset a números (con valores por defecto)
+        const paginationLimit = parseInt(limit) || 100; // Por defecto, 100 registros por página
+        const paginationOffset = parseInt(offset) || 0; // Por defecto, empieza desde el primer registro
+
+        // Consulta SQL con paginación y filtro por workgroup_id
+        const queryText = `
+            SELECT * FROM Events 
+            WHERE workgroup_id = $1 
+            ORDER BY id 
+            LIMIT $2 OFFSET $3
+        `;
+        const queryParams = [workgroup_id, paginationLimit, paginationOffset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron eventos para el grupo de trabajo especificado.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows,
+            pagination: {
+                limit: paginationLimit,
+                offset: paginationOffset,
+                next_offset: paginationOffset + paginationLimit
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
