@@ -893,6 +893,70 @@ app.get('/eventattendancesummary/:event_id', async (req, res) => {
     }
 });
 
+// ENPOINT PARA LAS PAGINAS DE MARKDOWN
+app.get('/alleventspages', async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM eventpage');
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/eventpage/:event_id', async (req, res) => {
+    const event_id = parseInt(req.params.event_id, 10);
+    const workgroupId = parseInt(req.query.workgroup_id, 10);
+
+    try {
+        const rows = await query(
+            'SELECT * FROM eventpage WHERE event_id = $1 AND workgroup_id = $2',
+            [event_id, workgroupId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Event page not found' });
+        }
+
+        res.json({ message: 'Success', data: rows[0] });
+    } catch (error) {
+        console.error('Error querying database:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/eventpage/:event_id', async (req, res) => {
+    const { event_id } = req.params;
+    const { workgroup_id, content } = req.body;
+
+    // Validación de entrada
+    if (!workgroup_id || !content) {
+        return res.status(400).json({ message: 'workgroup_id y content son requeridos' });
+    }
+
+    try {
+        // Verificar si la página existe y pertenece al workgroup
+        const existingPage = await query(
+            'SELECT * FROM eventpage WHERE event_id = $1 AND workgroup_id = $2',
+            [event_id, workgroup_id]
+        );
+
+        // Verificar si la consulta devolvió resultados
+        if (existingPage.length === 0) {
+            return res.status(404).json({ message: 'Página no encontrada o no pertenece al grupo de trabajo' });
+        }
+
+        // Actualizar la página
+        const updatedPage = await query(
+            'UPDATE eventpage SET content = $1 WHERE event_id = $2 AND workgroup_id = $3 RETURNING *',
+            [content, event_id, workgroup_id]
+        );
+
+        res.json({ message: 'Página actualizada exitosamente', data: updatedPage[0] });
+    } catch (error) {
+        console.error('Error al actualizar página:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 
 /***************************************************************
