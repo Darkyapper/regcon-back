@@ -172,7 +172,7 @@ app.post('/events', async (req, res) => {
 app.get('/events', async (req, res) => {
     try {
         // Obtener los parámetros de paginación (con valores por defecto)
-        const limit = parseInt(req.query.limit) || 100; // Por defecto, 100 registros por página
+        const limit = parseInt(req.query.limit) || 10; // Por defecto, 100 registros por página
         const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
 
         // Consulta SQL con paginación
@@ -207,7 +207,7 @@ app.get('/events', async (req, res) => {
 
     try {
         // Convertir limit y offset a números (con valores por defecto)
-        const paginationLimit = parseInt(limit) || 100; // Por defecto, 100 registros por página
+        const paginationLimit = parseInt(limit) || 10; // Por defecto, 100 registros por página
         const paginationOffset = parseInt(offset) || 0; // Por defecto, empieza desde el primer registro
 
         // Consulta SQL con paginación y filtro por workgroup_id
