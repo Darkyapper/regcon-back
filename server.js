@@ -254,6 +254,92 @@ app.get('/events/:id', async (req, res) => {
     }
 });
 
+// Enpoints para la vista de eventos
+app.get('/all-events', async (req, res) => {
+    try {
+        // Obtener los parámetros de paginación (con valores por defecto)
+        const limit = parseInt(req.query.limit) || 10; // Por defecto, 100 registros por página
+        const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
+
+        // Consulta SQL con paginación
+        const queryText = 'SELECT * FROM event_details ORDER BY event_id LIMIT $1 OFFSET $2';
+        const queryParams = [limit, offset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams); // Cambio aquí: no desestructurar
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron eventos.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows, // Asegúrate de que los datos estén aquí
+            pagination: {
+                limit: limit,
+                offset: offset,
+                next_offset: offset + limit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/all-events', async (req, res) => {
+    const { workgroup_id, limit, offset } = req.query; // Obtén los parámetros de la consulta
+
+    try {
+        // Convertir limit y offset a números (con valores por defecto)
+        const paginationLimit = parseInt(limit) || 10; // Por defecto, 100 registros por página
+        const paginationOffset = parseInt(offset) || 0; // Por defecto, empieza desde el primer registro
+
+        // Consulta SQL con paginación y filtro por workgroup_id
+        const queryText = `
+            SELECT * FROM event_details
+            WHERE workgroup_id = $1 
+            ORDER BY event_id 
+            LIMIT $2 OFFSET $3
+        `;
+        const queryParams = [workgroup_id, paginationLimit, paginationOffset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron eventos para el grupo de trabajo especificado.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows,
+            pagination: {
+                limit: paginationLimit,
+                offset: paginationOffset,
+                next_offset: paginationOffset + paginationLimit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+app.get('/event-detail/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('SELECT * FROM event_details WHERE event_id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
+        res.json({ message: 'Success', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 app.put('/events/:id', async (req, res) => {
     const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
     const { id } = req.params;
