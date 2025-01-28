@@ -110,23 +110,33 @@ app.get('/users/:id', async (req, res) => {
 });
 
 app.post('/users', async (req, res) => {
-    const { first_name, last_name, email, phone } = req.body;
-    
-    // Generar una contraseña temporal
-    const tempPassword = generateTempPassword(); 
-    // Encriptar la contraseña antes de guardarla
-    const hashedPassword = await bcrypt.hash(tempPassword, saltRounds);
-    
+    const { first_name, last_name, email, phone, password, birthday} = req.body;
+
+    if (!password || password.length < 8) {
+        return res.status(400).json({ 
+            error: 'La contraseña es requerida y debe tener al menos 8 caracteres.' 
+        });
+    }
+
     try {
+        // Encriptar la contraseña proporcionada por el usuario
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // Insertar el usuario en la base de datos
         const rows = await query(
-            'INSERT INTO Users (first_name, last_name, email, phone, password) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [first_name, last_name, email, phone, hashedPassword]
+            'INSERT INTO Users (first_name, last_name, email, phone, password, birthday) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [first_name, last_name, email, phone, hashedPassword, birthday]
         );
-        res.json({ message: 'Usuario registrado exitosamente. La contraseña temporal es: ' + tempPassword, data: rows[0] });
+
+        res.json({ 
+            message: 'Usuario registrado exitosamente.', 
+            data: rows[0] 
+        });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
+
 
 app.put('/users/:id', async (req, res) => {
     const { first_name, last_name, email, phone, password } = req.body;
