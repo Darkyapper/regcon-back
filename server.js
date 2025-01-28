@@ -845,7 +845,7 @@ app.delete('/roles/:id', async (req, res) => {
 });
 
 // Endpoint para iniciar sesión
-app.post('/login', async (req, res) => {
+app.post('/admin-login', async (req, res) => {
     const { email, password } = req.body;
 
     try {
@@ -1074,6 +1074,45 @@ app.put('/eventpage/:event_id', async (req, res) => {
  *             ENPOINTS PARA PAGINA USUARIOS
  * 
  * ************************************************************/
+
+// Inicio de sesión de ususarios
+app.post('/user-login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        // Buscar al usuario por correo electrónico
+        const user = await query('SELECT * FROM Users WHERE email = $1', [email]);
+
+        if (user.length === 0) {
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
+        }
+
+        // Verificar la contraseña
+        const isMatch = await bcrypt.compare(password, user[0].password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
+        }
+
+        // Generar un token JWT con la información del usuario
+        const token = jwt.sign(
+            { id: user[0].id, email: user[0].email },
+            'tu_secreto_aqui', // Cambia esto a una clave secreta segura
+            { expiresIn: '1h' }
+        );
+
+        res.json({
+            message: 'Inicio de sesión exitoso',
+            token,
+            user_id: user[0].id,
+            first_name: user[0].first_name,
+            last_name: user[0].last_name,
+            email: user[0].email
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
