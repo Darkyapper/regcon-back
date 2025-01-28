@@ -182,7 +182,7 @@ app.post('/events', async (req, res) => {
             'INSERT INTO Events (name, event_date, location, description, workgroup_id, image, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
             [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
         );
-        res.json({ message: 'Event created successfully', data: rows[0] });
+        res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
