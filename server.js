@@ -157,11 +157,11 @@ app.delete('/users/:id', async (req, res) => {
 
 // Endpoints para Eventos
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, category_id, workgroup_id, image } = req.body;
+    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Events (name, event_date, location, description, category_id, workgroup_id, image) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, category_id, workgroup_id, image]
+            'INSERT INTO Events (name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online ]
         );
         res.json({ message: 'Event created successfully', data: rows[0] });
     } catch (error) {
@@ -255,12 +255,12 @@ app.get('/events/:id', async (req, res) => {
 });
 
 app.put('/events/:id', async (req, res) => {
-    const { name, event_date, location, description, category_id, workgroup_id } = req.body;
+    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
     const { id } = req.params;
     try {
         const rows = await query(
-            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6 WHERE id = $7 RETURNING *`,
-            [name, event_date, location, description, category_id, workgroup_id, id]
+            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6, image = $7, event_category = $8, is_online = $9 WHERE id = $10 RETURNING *`,
+            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online, id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
         res.json({ message: 'Event updated successfully', data: rows[0] });
@@ -279,6 +279,54 @@ app.delete('/events/:id', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+
+// Enpoints para las categorías de eventos
+app.post('/event-categories', async (req, res) => {
+    const { name, description } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO eventcategories (name, description) VALUES ($1, $2) RETURNING *',
+            [name, description]
+        );
+        res.json({ message: 'Event category created successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.get('/event-categories', async (req, res) => {
+    try {
+        // Obtener los parámetros de paginación (con valores por defecto)
+        const limit = parseInt(req.query.limit) || 100; // Por defecto, 100 registros por página
+        const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
+
+        // Consulta SQL con paginación
+        const queryText = 'SELECT * FROM eventcategories ORDER BY id LIMIT $1 OFFSET $2';
+        const queryParams = [limit, offset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams); // Cambio aquí: no desestructurar
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron categorias de eventos.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows, // Asegúrate de que los datos estén aquí
+            pagination: {
+                limit: limit,
+                offset: offset,
+                next_offset: offset + limit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 // Endpoints para TicketCategories
 app.post('/ticket-categories', async (req, res) => {
