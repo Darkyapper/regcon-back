@@ -78,10 +78,17 @@ const generateTempPassword = () => {
 
 /***************************************************************
  * 
+ * 
+ * 
  *                ENPOINTS PARA ADMINISTRADORES
  * 
+ * 
+ * 
  * ************************************************************/
-// Enpoints para usuarios
+
+/***************************************************************
+ *                CONTROL DE USUARIOS
+ * ************************************************************/
 app.get('/users', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM Users');
@@ -155,7 +162,9 @@ app.delete('/users/:id', async (req, res) => {
     }
 });
 
-// Endpoints para Eventos
+/***************************************************************
+ *                CONTROL DE EVENTOS SIN WORKGROUP
+ * ************************************************************/
 app.post('/events', async (req, res) => {
     const { name, event_date, location, description, workgroup_id, image, event_category, is_online } = req.body;
     try {
@@ -254,7 +263,35 @@ app.get('/events/:id', async (req, res) => {
     }
 });
 
-// Enpoints para la vista de eventos
+app.put('/events/:id', async (req, res) => {
+    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
+    const { id } = req.params;
+    try {
+        const rows = await query(
+            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6, image = $7, event_category = $8, is_online = $9 WHERE id = $10 RETURNING *`,
+            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online, id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
+        res.json({ message: 'Event updated successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.delete('/events/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('DELETE FROM Events WHERE id = $1 RETURNING id', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
+        res.json({ message: 'Event deleted successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+/***************************************************************
+ *                VISTA DE EVENTOS SIN WORKGROUP
+ * ************************************************************/
 app.get('/all-events', async (req, res) => {
     try {
         // Obtener los parámetros de paginación (con valores por defecto)
@@ -340,33 +377,9 @@ app.get('/event-detail/:id', async (req, res) => {
     }
 });
 
-app.put('/events/:id', async (req, res) => {
-    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
-    const { id } = req.params;
-    try {
-        const rows = await query(
-            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6, image = $7, event_category = $8, is_online = $9 WHERE id = $10 RETURNING *`,
-            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online, id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
-        res.json({ message: 'Event updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.delete('/events/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const rows = await query('DELETE FROM Events WHERE id = $1 RETURNING id', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
-        res.json({ message: 'Event deleted successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Enpoints para las categorías de eventos
+/***************************************************************
+ *                VISTA DE EVENTOS SIN WORKGROUP
+ * ************************************************************/
 app.post('/event-categories', async (req, res) => {
     const { name, description } = req.body;
     try {
@@ -413,7 +426,9 @@ app.get('/event-categories', async (req, res) => {
     }
 });
 
-// Endpoints para TicketCategories
+/***************************************************************
+ *                CONTROL DE TICKECTS CATEGORIES
+ * ************************************************************/
 app.post('/ticket-categories', async (req, res) => {
     const { name, price, description, workgroup_id } = req.body;
     try {
@@ -476,7 +491,9 @@ app.delete('/ticket-categories/:id', async (req, res) => {
     }
 });
 
-//Enpoint para la relación de boletos y eventos
+/***************************************************************
+ *         CONTROL DE RELACIONES DE TICKETS Y EVENTOS
+ * ************************************************************/
 app.post('/ticket-events', async (req, res) => {
     const { event_id, ticketcategory_id } = req.body;
 
@@ -594,7 +611,9 @@ app.get('/ticket-events/:event_id', async (req, res) => {
 });
 
 
-// Endpoints para boletos
+/***************************************************************
+ *                CONTROL DE BOLETOS SIN WORKGROUP
+ * ************************************************************/
 app.get('/tickets', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM Tickets');
@@ -655,7 +674,9 @@ app.delete('/tickets/:code', async (req, res) => {
 });
 
 
-// Endpoint para tener los boletos con su información completa
+/***************************************************************
+ *              VISTA DE TICKETS CON INFORMACIÓN
+ * ************************************************************/
 app.get('/ticket-view', async (req, res) => {
     const { workgroup_id } = req.query; // Obtener ambos parámetros de consulta
 
@@ -710,8 +731,9 @@ app.get('/ticket-view/:code', async (req, res) => {
 });
 
 
-
-// Endpoints para registros (Attendance en lugar de Registration)
+/***************************************************************
+ *           CONTROL DE ASISTENCIAS SIN WORKGROUP
+ * ************************************************************/
 app.get('/attendance', async (req, res) => {
     const { ticket_code, workgroup_id } = req.query; // Obtener parámetros de consulta
 
@@ -797,7 +819,9 @@ app.delete('/attendance/:id', async (req, res) => {
     }
 });
 
-// Endpoint para obtener los registros con información completa (AttendanceDetails en lugar de RegistrationDetails)
+/***************************************************************
+ *        VISTA DE INFORMACIÓN COMPLETA DE ASISTENCIA
+ * ************************************************************/
 app.get('/attendance-info', async (req, res) => {
     const { workgroup_id } = req.query; // Obtener el workgroup_id de la consulta
 
@@ -808,7 +832,6 @@ app.get('/attendance-info', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 
 app.get('/attendance-info/:id', async (req, res) => {
     const { id } = req.params;
@@ -821,7 +844,9 @@ app.get('/attendance-info/:id', async (req, res) => {
     }
 });
 
-// enpoint para obtener las categorías de boletos con sus respectivos conteos
+/***************************************************************
+ *          VISTA DE BOLETOS Y CANTIDAD DE LOS MISMOS
+ * ************************************************************/
 app.get('/ticket-categories-with-counts', async (req, res) => {
     const { workgroup_id } = req.query; // Obtener el workgroup_id de la consulta
 
@@ -832,7 +857,6 @@ app.get('/ticket-categories-with-counts', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 
 app.get('/ticket-categories-with-counts/:id', async (req, res) => {
     const { id } = req.params;
@@ -845,7 +869,9 @@ app.get('/ticket-categories-with-counts/:id', async (req, res) => {
     }
 });
 
-// Obtener todos los boletos de una categoría específica
+/***************************************************************
+ *         VER LOS BOLETOS DE UNA CATEGORIA ESPECIFICA
+ * ************************************************************/
 app.get('/tickets/category/:category_id', async (req, res) => {
     const { category_id } = req.params;
     try {
@@ -856,7 +882,9 @@ app.get('/tickets/category/:category_id', async (req, res) => {
     }
 });
 
-// Endpoints para grupos de trabajo
+/***************************************************************
+ *                CONTROL DE GRUPOS DE TRABAJO
+ * ************************************************************/
 app.get('/workgroups', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM WorkGroups');
@@ -915,169 +943,6 @@ app.delete('/workgroups/:id', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
-
-// Endpoints para administradores
-app.get('/admin', async (req, res) => {
-    try {
-        const rows = await query('SELECT * FROM Admin');
-        res.json({ message: 'Success', data: rows });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/admin/:id', async (req, res) => {
-    const { id } = req.params;
-    const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
-
-    try {
-        const rows = await query('SELECT * FROM Admin WHERE id = $1', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
-
-        // Verificar si el admin pertenece al workgroup actual
-        const membershipCheck = await query('SELECT * FROM membership WHERE admin_id = $1 AND workgroup_id = $2', [id, workgroupId]);
-        if (membershipCheck.length === 0) {
-            return res.status(403).json({ message: 'Este administrador no pertenece al grupo de trabajo actual.' });
-        }
-
-        res.json({ message: 'Success', data: rows[0] });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-
-app.post('/admin', async (req, res) => {
-    const { first_name, last_name, email, phone, description, password } = req.body;
-    try {
-        const rows = await query(
-            'INSERT INTO Admin (first_name, last_name, email, phone, description, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [first_name, last_name, email, phone, description, password]
-        );
-        res.json({ message: 'Admin created successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.put('/admin/:id', async (req, res) => {
-    const { id } = req.params;
-    const { first_name, last_name, email, phone, description, password } = req.body;
-    try {
-        const rows = await query(
-            `UPDATE Admin SET first_name = $1, last_name = $2, email = $3, phone = $4, description = $5, password = $6 WHERE id = $7 RETURNING *`,
-            [first_name, last_name, email, phone, description, password, id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
-        res.json({ message: 'Admin updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.delete('/admin/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const rows = await query('DELETE FROM Admin WHERE id = $1 RETURNING id', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
-        res.json({ message: 'Admin deleted successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Endpoints para roles
-app.get('/roles', async (req, res) => {
-    try {
-        const rows = await query('SELECT * FROM Roles');
-        res.json({ message: 'Success', data: rows });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.get('/roles/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const rows = await query('SELECT * FROM Roles WHERE id = $1', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
-        res.json({ message: 'Success', data: rows[0] });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/roles', async (req, res) => {
-    const { name, description } = req.body;
-    try {
-        const rows = await query(
-            'INSERT INTO Roles (name, description) VALUES ($1, $2) RETURNING *',
-            [name, description]
-        );
-        res.json({ message: 'Role created successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.put('/roles/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, description } = req.body;
-    try {
-        const rows = await query(
-            `UPDATE Roles SET name = $1, description = $2 WHERE id = $3 RETURNING *`,
-            [name, description, id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
-        res.json({ message: 'Role updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.delete('/roles/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const rows = await query('DELETE FROM Roles WHERE id = $1 RETURNING id', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
-        res.json({ message: 'Role deleted successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Endpoint para iniciar sesión
-app.post('/admin-login', async (req, res) => {
-    const { email, password } = req.body;
-
-    try {
-        // Buscar al administrador por correo electrónico
-        const admin = await query('SELECT * FROM Admin WHERE email = $1', [email]);
-
-        if (admin.length === 0) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
-        }
-
-        // Verificar la contraseña
-        const isMatch = await bcrypt.compare(password, admin[0].password);
-        if (!isMatch) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
-        }
-
-        // Obtener el workgroup_id de la tabla membership
-        const membership = await query('SELECT workgroup_id, role_id FROM membership WHERE admin_id = $1', [admin[0].id]);
-        const workgroup_id = membership.length > 0 ? membership[0].workgroup_id : null;
-        const role_id = membership.length > 0 ? membership[0].role_id : null; // Obtener role_id
-
-        // Crear un token
-        const token = jwt.sign({ id: admin[0].id, workgroup_id, role_id }, 'tu_secreto_aqui', { expiresIn: '1h' });
-
-        res.json({ message: 'Inicio de sesión exitoso', token, workgroup_id, role_id, user_id: admin[0].id }); // Agregar role_id aquí
-    } catch (error) {
-        res.status(500).json({ error: 'Error del servidor' });
-    }
-});
-
 
 // Obtener todos los registros de la vista usersmembership
 app.get('/usersmembership', async (req, res) => {
@@ -1172,7 +1037,175 @@ app.delete('/membership/:workgroup_id/:admin_id', async (req, res) => {
     }
 });
 
-// Obtener registros de la vista eventattendancesummary
+/***************************************************************
+ *                CONTROL DE ADMINISTRADORES
+ * ************************************************************/
+app.get('/admin', async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM Admin');
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/admin/:id', async (req, res) => {
+    const { id } = req.params;
+    const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
+
+    try {
+        const rows = await query('SELECT * FROM Admin WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+
+        // Verificar si el admin pertenece al workgroup actual
+        const membershipCheck = await query('SELECT * FROM membership WHERE admin_id = $1 AND workgroup_id = $2', [id, workgroupId]);
+        if (membershipCheck.length === 0) {
+            return res.status(403).json({ message: 'Este administrador no pertenece al grupo de trabajo actual.' });
+        }
+
+        res.json({ message: 'Success', data: rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+app.post('/admin', async (req, res) => {
+    const { first_name, last_name, email, phone, description, password } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO Admin (first_name, last_name, email, phone, description, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [first_name, last_name, email, phone, description, password]
+        );
+        res.json({ message: 'Admin created successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.put('/admin/:id', async (req, res) => {
+    const { id } = req.params;
+    const { first_name, last_name, email, phone, description, password } = req.body;
+    try {
+        const rows = await query(
+            `UPDATE Admin SET first_name = $1, last_name = $2, email = $3, phone = $4, description = $5, password = $6 WHERE id = $7 RETURNING *`,
+            [first_name, last_name, email, phone, description, password, id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+        res.json({ message: 'Admin updated successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.delete('/admin/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('DELETE FROM Admin WHERE id = $1 RETURNING id', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+        res.json({ message: 'Admin deleted successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.post('/admin-login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        // Buscar al administrador por correo electrónico
+        const admin = await query('SELECT * FROM Admin WHERE email = $1', [email]);
+
+        if (admin.length === 0) {
+            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+        }
+
+        // Verificar la contraseña
+        const isMatch = await bcrypt.compare(password, admin[0].password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+        }
+
+        // Obtener el workgroup_id de la tabla membership
+        const membership = await query('SELECT workgroup_id, role_id FROM membership WHERE admin_id = $1', [admin[0].id]);
+        const workgroup_id = membership.length > 0 ? membership[0].workgroup_id : null;
+        const role_id = membership.length > 0 ? membership[0].role_id : null; // Obtener role_id
+
+        // Crear un token
+        const token = jwt.sign({ id: admin[0].id, workgroup_id, role_id }, 'tu_secreto_aqui', { expiresIn: '1h' });
+
+        res.json({ message: 'Inicio de sesión exitoso', token, workgroup_id, role_id, user_id: admin[0].id }); // Agregar role_id aquí
+    } catch (error) {
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
+
+/***************************************************************
+ *                CONTROL DE ROLES
+ * ************************************************************/
+app.get('/roles', async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM Roles');
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/roles/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('SELECT * FROM Roles WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
+        res.json({ message: 'Success', data: rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/roles', async (req, res) => {
+    const { name, description } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO Roles (name, description) VALUES ($1, $2) RETURNING *',
+            [name, description]
+        );
+        res.json({ message: 'Role created successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.put('/roles/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    try {
+        const rows = await query(
+            `UPDATE Roles SET name = $1, description = $2 WHERE id = $3 RETURNING *`,
+            [name, description, id]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
+        res.json({ message: 'Role updated successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.delete('/roles/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('DELETE FROM Roles WHERE id = $1 RETURNING id', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Role not found' });
+        res.json({ message: 'Role deleted successfully', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+
+/***************************************************************
+ *            ESTADISTICAS DE EVENTOS Y ASISTENCIAS
+ * ************************************************************/
 // Endpoint para obtener el resumen de asistencia filtrando por workgroup_id y event_id
 app.get('/eventattendancesummary', async (req, res) => {
     const workgroupId = req.query.workgroup_id; // Obtener workgroup_id de la query
@@ -1205,7 +1238,9 @@ app.get('/eventattendancesummary/:event_id', async (req, res) => {
     }
 });
 
-// ENPOINT PARA LAS PAGINAS DE MARKDOWN
+/***************************************************************
+ *             CONTROL DE PÁGINAS DE EVENTOS
+ * ************************************************************/
 app.get('/alleventspages', async (req, res) => {
     try {
         const rows = await query('SELECT * FROM eventpage');
@@ -1277,7 +1312,9 @@ app.put('/eventpage/:event_id', async (req, res) => {
  * 
  * ************************************************************/
 
-// Inicio de sesión de ususarios
+/***************************************************************
+ *                INICIO DE SESIÓN
+ * ************************************************************/
 app.post('/user-login', async (req, res) => {
     const { email, password } = req.body;
 
@@ -1316,6 +1353,7 @@ app.post('/user-login', async (req, res) => {
 });
 
 
+/******************************************************************************/
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
