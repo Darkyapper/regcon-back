@@ -157,11 +157,11 @@ app.delete('/users/:id', async (req, res) => {
 
 // Endpoints para Eventos
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
+    const { name, event_date, location, description, workgroup_id, image, event_category, is_online } = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Events (name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online ]
+            'INSERT INTO Events (name, event_date, location, description, workgroup_id, image, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
         );
         res.json({ message: 'Event created successfully', data: rows[0] });
     } catch (error) {
@@ -327,7 +327,6 @@ app.get('/event-categories', async (req, res) => {
     }
 });
 
-
 // Endpoints para TicketCategories
 app.post('/ticket-categories', async (req, res) => {
     const { name, price, description, workgroup_id } = req.body;
@@ -388,6 +387,123 @@ app.delete('/ticket-categories/:id', async (req, res) => {
         res.json({ message: 'Ticket category deleted successfully', data: rows[0] });
     } catch (error) {
         res.status(400).json({ error: error.message });
+    }
+});
+
+//Enpoint para la relación de boletos y eventos
+app.post('/ticket-events', async (req, res) => {
+    const { event_id, ticketcategory_id } = req.body;
+
+    try {
+        // Verificar si el boleto ya está asignado a un evento
+        const existingRelation = await query(
+            'SELECT * FROM eventtickets WHERE ticketcategory_id = $1',
+            [ticketcategory_id]
+        );
+
+        if (existingRelation.length > 0) {
+            return res.status(400).json({
+                error: 'El boleto ya está asignado a otro evento',
+                assigned_event_id: existingRelation[0].event_id // Información opcional para el cliente
+            });
+        }
+
+        // Si no está asignado, insertar la nueva relación
+        const rows = await query(
+            'INSERT INTO eventtickets (event_id, ticketcategory_id) VALUES ($1, $2) RETURNING *',
+            [event_id, ticketcategory_id]
+        );
+
+        res.json({ message: 'Boletos asignados correctamente a un evento', data: rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: 'Error del servidor', details: error.message });
+    }
+});
+
+app.get('/ticket-events', async (req, res) => {
+    try {
+        const rows = await query('SELECT * FROM eventtickets');
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/ticket-events/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const rows = await query('DELETE FROM eventtickets WHERE ticketcategory_id = $1 RETURNING *', [id]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Ticket not found' });
+        res.json({ message: 'Relación de boletos y eventos eliminada correctamente', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.put('/ticket-events/:id', async (req, res) => {
+    const { id } = req.params; // `id` corresponde a `ticketcategory_id`
+    const { event_id } = req.body; // Nuevo `event_id` al que se asignará el boleto
+
+    try {
+        // Verificar si el boleto ya está relacionado con el evento especificado
+        const existingRelation = await query(
+            'SELECT * FROM eventtickets WHERE ticketcategory_id = $1',
+            [id]
+        );
+
+        if (existingRelation.length === 0) {
+            return res.status(404).json({ error: 'Relación no encontrada' });
+        }
+
+        // Verificar si el boleto ya está asignado al nuevo evento
+        const duplicateCheck = await query(
+            'SELECT * FROM eventtickets WHERE ticketcategory_id = $1 AND event_id = $2',
+            [id, event_id]
+        );
+
+        if (duplicateCheck.length > 0) {
+            return res.status(400).json({ error: 'El boleto ya está asignado al evento especificado' });
+        }
+
+        // Actualizar la relación
+        const rows = await query(
+            'UPDATE eventtickets SET event_id = $1 WHERE ticketcategory_id = $2 RETURNING *',
+            [event_id, id]
+        );
+
+        res.json({
+            message: 'Relación de boleto y evento actualizada correctamente',
+            data: rows[0]
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Error del servidor', details: error.message });
+    }
+});
+
+app.get('/ticket-events/:event_id', async (req, res) => {
+    const { event_id } = req.params; // ID del evento
+
+    try {
+        // Consultar los boletos relacionados con el evento
+        const rows = await query(
+            `SELECT * 
+             FROM eventtickets 
+             WHERE event_id = $1`,
+            [event_id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                error: 'No se encontraron boletos relacionados con este evento'
+            });
+        }
+
+        res.json({
+            message: 'Boletos relacionados con el evento encontrados',
+            data: rows
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Error del servidor', details: error.message });
     }
 });
 
