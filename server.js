@@ -5,6 +5,7 @@ const multer = require('multer');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
 require('dotenv').config();
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -65,16 +66,40 @@ process.on('SIGINT', () => {
     });
 });
 
-const generateTempPassword = () => {
-    const length = 12;
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let tempPassword = "";
-    for (let i = 0; i < length; i++) {
-        const randomIndex = Math.floor(Math.random() * charset.length);
-        tempPassword += charset[randomIndex];
+/***************************************************************
+ *                        SUBIR IMAGENES
+ * ************************************************************/
+app.post('/upload', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
+        }
+
+        // Convierte la imagen a Base64
+        const fs = require('fs');
+        const imageBuffer = fs.readFileSync(req.file.path);
+        const imageBase64 = imageBuffer.toString('base64');
+
+        // Llamada a la API de ImgBB
+        const imgbbApiKey = process.env.IMGBB_API_KEY;
+        const response = await axios.post('https://api.imgbb.com/1/upload', null, {
+            params: {
+                key: imgbbApiKey,
+                image: imageBase64
+            }
+        });
+
+        // Borra el archivo temporal después de subirlo
+        fs.unlinkSync(req.file.path);
+
+        // Responde con la URL de la imagen subida
+        res.json({ url: response.data.data.url });
+    } catch (error) {
+        console.error('Error al subir la imagen:', error);
+        res.status(500).json({ error: 'Error al subir la imagen' });
     }
-    return tempPassword;
-};
+});
+
 
 /***************************************************************
  * 
@@ -1362,6 +1387,67 @@ app.post('/user-login', async (req, res) => {
     }
 });
 
+/***************************************************************
+ *               PREFERENCIAS DEL USUARIO
+ * ************************************************************/
+// Endpoint para obtener las preferencias de eventos
+app.get('/users/:user_id/preferences', async (req, res) => {
+    const { user_id } = req.params;
+
+    try {
+        // Obtener las preferencias de eventos del usuario
+        const sql = `
+            SELECT user_prefs->'event_preferences' as event_preferences
+            FROM public.users
+            WHERE id = $1;
+        `;
+        const result = await query(sql, [user_id]);
+
+        if (result.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+
+        res.json({ event_preferences: result[0].event_preferences });
+    } catch (error) {
+        console.error('Error al obtener las preferencias:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// Endpoint para guardar/actualizar las preferencias de eventos
+app.put('/users/:user_id/preferences', async (req, res) => {
+    const { user_id } = req.params;
+    const { event_preferences } = req.body;
+
+    if (!event_preferences) {
+        return res.status(400).json({ error: 'event_preferences es requerido' });
+    }
+
+    try {
+        // Actualizar las preferencias de eventos en la base de datos
+        const sql = `
+            UPDATE public.users
+            SET user_prefs = jsonb_set(
+                user_prefs,
+                '{event_preferences}',
+                $1::jsonb,
+                true
+            )
+            WHERE id = $2
+            RETURNING *;
+        `;
+        const result = await query(sql, [JSON.stringify(event_preferences), user_id]);
+
+        if (result.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+
+        res.json({ message: 'Preferencias actualizadas correctamente', user: result[0] });
+    } catch (error) {
+        console.error('Error al actualizar las preferencias:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
 
 /******************************************************************************/
 app.listen(PORT, () => {
