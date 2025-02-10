@@ -201,10 +201,10 @@ app.delete('/users/:id', async (req, res) => {
  *                CONTROL DE EVENTOS SIN WORKGROUP
  * ************************************************************/
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, workgroup_id, image, event_category, is_online } = req.body;
+    const { name, event_date, location, description, workgroup_id, event_category, is_online } = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Events (name, event_date, location, description, workgroup_id, image, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
             [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
         );
         res.json({ message: 'Success', data: rows[0] });
@@ -299,12 +299,12 @@ app.get('/events/:id', async (req, res) => {
 });
 
 app.put('/events/:id', async (req, res) => {
-    const { name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online } = req.body;
+    const { name, event_date, location, description, category_id, workgroup_id, event_category, is_online } = req.body;
     const { id } = req.params;
     try {
         const rows = await query(
-            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6, image = $7, event_category = $8, is_online = $9 WHERE id = $10 RETURNING *`,
-            [name, event_date, location, description, category_id, workgroup_id, image, event_category, is_online, id]
+            `UPDATE Events SET name = $1, event_date = $2, location = $3, description = $4, category_id = $5, workgroup_id = $6, event_category = $7, is_online = $8 WHERE id = $9 RETURNING *`,
+            [name, event_date, location, description, category_id, workgroup_id, event_category, is_online, id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
         res.json({ message: 'Event updated successfully', data: rows[0] });
@@ -321,6 +321,86 @@ app.delete('/events/:id', async (req, res) => {
         res.json({ message: 'Event deleted successfully', data: rows[0] });
     } catch (error) {
         res.status(400).json({ error: error.message });
+    }
+});
+/***************************************************************
+ *                VISTA DE IMAGENES DE EVENTOS
+ * ************************************************************/
+app.post('/events/:id/upload-image', upload.single('image'), async (req, res) => {
+    const eventId = req.params.id;
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
+        }
+
+        // Convierte la imagen a Base64
+        const imageBuffer = fs.readFileSync(req.file.path);
+        const imageBase64 = imageBuffer.toString('base64');
+
+        // Sube la imagen a ImgBB
+        const imgbbApiKey = process.env.IMGBB_API_KEY;
+        const response = await axios.post('https://api.imgbb.com/1/upload', null, {
+            params: {
+                key: imgbbApiKey,
+                image: imageBase64
+            }
+        });
+
+        // Obtiene la URL de la imagen subida
+        const imageUrl = response.data.data.url;
+
+        // Actualiza el campo `image` del evento en la base de datos
+        const updatedEvent = await query(
+            'UPDATE Events SET image = $1 WHERE id = $2 RETURNING *',
+            [imageUrl, eventId]
+        );
+
+        // Borra el archivo temporal después de subirlo
+        fs.unlinkSync(req.file.path);
+
+        res.json({ message: 'Imagen subida y evento actualizado exitosamente', data: updatedEvent[0] });
+    } catch (error) {
+        console.error('Error al subir la imagen:', error);
+        res.status(500).json({ error: 'Error al subir la imagen', details: error.message });
+    }
+});
+
+app.put('/events/:id/update-image', upload.single('image'), async (req, res) => {
+    const eventId = req.params.id;
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
+        }
+
+        // Convierte la imagen a Base64
+        const imageBuffer = fs.readFileSync(req.file.path);
+        const imageBase64 = imageBuffer.toString('base64');
+
+        // Sube la nueva imagen a ImgBB
+        const imgbbApiKey = process.env.IMGBB_API_KEY;
+        const response = await axios.post('https://api.imgbb.com/1/upload', null, {
+            params: {
+                key: imgbbApiKey,
+                image: imageBase64
+            }
+        });
+
+        // Obtiene la URL de la nueva imagen subida
+        const newImageUrl = response.data.data.url;
+
+        // Actualiza el campo `image` del evento en la base de datos
+        const updatedEvent = await query(
+            'UPDATE Events SET image = $1 WHERE id = $2 RETURNING *',
+            [newImageUrl, eventId]
+        );
+
+        // Borra el archivo temporal después de subirlo
+        fs.unlinkSync(req.file.path);
+
+        res.json({ message: 'Imagen actualizada exitosamente', data: updatedEvent[0] });
+    } catch (error) {
+        console.error('Error al actualizar la imagen:', error);
+        res.status(500).json({ error: 'Error al actualizar la imagen', details: error.message });
     }
 });
 
