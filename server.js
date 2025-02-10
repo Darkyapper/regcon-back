@@ -6,6 +6,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
 require('dotenv').config();
 const axios = require('axios');
+const fs = require('fs');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
