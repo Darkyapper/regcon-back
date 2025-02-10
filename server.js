@@ -6,7 +6,6 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
 require('dotenv').config();
 const axios = require('axios');
-const fs = require('fs');
 
 
 const app = express();
@@ -14,16 +13,18 @@ const PORT = process.env.PORT || 3000;
 const saltRounds = 10;
 
 // Configuración de Multer para carga de archivos
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Máximo 5MB
+    fileFilter: (req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+            return cb(new Error('Solo se permiten archivos de imagen'));
+        }
+        cb(null, true);
     }
 });
 
-const upload = multer({ storage });
 
 app.use(cors({
     origin: '*', // Permitir todas las solicitudes de origen
@@ -330,14 +331,14 @@ app.delete('/events/:id', async (req, res) => {
  * ************************************************************/
 app.post('/events/:id/upload-image', upload.single('image'), async (req, res) => {
     const eventId = req.params.id;
+
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
         }
 
-        // Convierte la imagen a Base64
-        const imageBuffer = fs.readFileSync(req.file.path);
-        const imageBase64 = imageBuffer.toString('base64');
+        // Convierte la imagen a Base64 directamente desde el buffer
+        const imageBase64 = req.file.buffer.toString('base64');
 
         // Sube la imagen a ImgBB
         const imgbbApiKey = process.env.IMGBB_API_KEY;
@@ -348,17 +349,18 @@ app.post('/events/:id/upload-image', upload.single('image'), async (req, res) =>
             }
         });
 
+        if (!response.data.success) {
+            throw new Error('Error al subir la imagen a ImgBB');
+        }
+
         // Obtiene la URL de la imagen subida
         const imageUrl = response.data.data.url;
 
-        // Actualiza el campo `image` del evento en la base de datos
+        // Actualiza la base de datos con la nueva imagen
         const updatedEvent = await query(
             'UPDATE Events SET image = $1 WHERE id = $2 RETURNING *',
             [imageUrl, eventId]
         );
-
-        // Borra el archivo temporal después de subirlo
-        fs.unlinkSync(req.file.path);
 
         res.json({ message: 'Imagen subida y evento actualizado exitosamente', data: updatedEvent[0] });
     } catch (error) {
