@@ -208,7 +208,7 @@ app.post('/events', async (req, res) => {
     try {
         const rows = await query(
             'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
+            [name, event_date, location, description, workgroup_id, event_category, is_online ]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
