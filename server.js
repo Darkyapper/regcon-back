@@ -467,7 +467,8 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
             params: {
                 key: imgbbApiKey,
                 image: imageBase64
-            }
+            },
+            timeout: 10000 // Aumenta el timeout a 10 segundos
         });
 
         if (!response.data.success) {
@@ -486,6 +487,18 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
         res.json({ message: 'Imagen actualizada exitosamente', data: updatedEvent[0] });
     } catch (error) {
         console.error('Error al actualizar la imagen:', error);
+        if (error.response) {
+            // El servidor respondió con un código de estado fuera del rango 2xx
+            console.error('Datos del error:', error.response.data);
+            console.error('Código de estado:', error.response.status);
+            console.error('Cabeceras:', error.response.headers);
+        } else if (error.request) {
+            // La solicitud fue hecha pero no se recibió respuesta
+            console.error('No se recibió respuesta del servidor:', error.request);
+        } else {
+            // Algo sucedió en la configuración de la solicitud que provocó un error
+            console.error('Error al configurar la solicitud:', error.message);
+        }
         res.status(500).json({ error: 'Error al actualizar la imagen', details: error.message });
     }
 });
