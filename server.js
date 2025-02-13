@@ -208,7 +208,7 @@ app.post('/events', async (req, res) => {
     try {
         const rows = await query(
             'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
+            [name, event_date, location, description, workgroup_id, event_category, is_online ]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
@@ -371,14 +371,14 @@ app.post('/events/:id/upload-image', upload.single('image'), async (req, res) =>
 
 app.put('/events/:id/update-image', upload.single('image'), async (req, res) => {
     const eventId = req.params.id;
+
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
         }
 
-        // Convierte la imagen a Base64
-        const imageBuffer = fs.readFileSync(req.file.path);
-        const imageBase64 = imageBuffer.toString('base64');
+        // Convierte la imagen a Base64 directamente desde el buffer
+        const imageBase64 = req.file.buffer.toString('base64');
 
         // Sube la nueva imagen a ImgBB
         const imgbbApiKey = process.env.IMGBB_API_KEY;
@@ -389,17 +389,18 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
             }
         });
 
+        if (!response.data.success) {
+            throw new Error('Error al subir la imagen a ImgBB');
+        }
+
         // Obtiene la URL de la nueva imagen subida
         const newImageUrl = response.data.data.url;
 
-        // Actualiza el campo `image` del evento en la base de datos
+        // Actualiza la base de datos con la nueva imagen
         const updatedEvent = await query(
             'UPDATE Events SET image = $1 WHERE id = $2 RETURNING *',
             [newImageUrl, eventId]
         );
-
-        // Borra el archivo temporal después de subirlo
-        fs.unlinkSync(req.file.path);
 
         res.json({ message: 'Imagen actualizada exitosamente', data: updatedEvent[0] });
     } catch (error) {
@@ -407,6 +408,7 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
         res.status(500).json({ error: 'Error al actualizar la imagen', details: error.message });
     }
 });
+
 
 /***************************************************************
  *                VISTA DE EVENTOS SIN WORKGROUP
