@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const multer = require('multer');
+const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken'); 
 require('dotenv').config();
 const axios = require('axios');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 
 const app = express();
@@ -26,11 +29,22 @@ const upload = multer({
 });
 
 
+const allowedOrigins = ['http://localhost:5173', 'https://toolregcon.vercel.app']; 
+
 app.use(cors({
-    origin: '*', // Permitir todas las solicitudes de origen
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    credentials: true
 }));
 
 app.use(express.json());
+app.use(cookieParser());
+app.use(helmet());
 
 // Configuración de conexión a Supabase PostgreSQL
 const pool = new Pool({
@@ -68,6 +82,64 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 5, // Máximo 5 intentos
+    message: { error: "Demasiados intentos de inicio de sesión. Inténtalo más tarde." }
+});
+
+const authenticateToken = (req, res, next) => {
+    try {
+        const token = req.cookies.token;
+        if (!token) {
+            return res.status(401).json({ error: "No autorizado, token faltante" });
+        }
+
+        // Verificar el token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Validar que el token contenga los datos necesarios
+        if (!decoded.id || !decoded.userType) {
+            return res.status(403).json({ error: "Token inválido, datos insuficientes" });
+        }
+
+        req.user = decoded; // Guardar los datos en la request para uso posterior
+        next();
+    } catch (error) {
+        if (error.name === "TokenExpiredError") {
+            return res.status(401).json({ error: "Token expirado, inicie sesión nuevamente" });
+        } else {
+            return res.status(403).json({ error: "Token inválido" });
+        }
+    }
+};
+
+module.exports = authenticateToken;
+
+/***************************************************************
+ *                 VERIFICAR LAS SESIONES
+ ***************************************************************/
+app.get('/auth/status', authenticateToken, (req, res) => {
+    const token = req.cookies.token; // Obtener el token desde la cookie
+
+    if (!token) {
+        return res.status(401).json({ authenticated: false, error: "No autorizado" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json({ 
+            authenticated: true, 
+            user_id: decoded.id, 
+            workgroup_id: decoded.workgroup_id, 
+            role_id: decoded.role_id 
+        });
+    } catch (error) {
+        res.status(401).json({ authenticated: false, error: "Token inválido" });
+    }
+});
+
 
 /***************************************************************
  *                        SUBIR IMAGENES
@@ -208,7 +280,7 @@ app.post('/events', async (req, res) => {
     try {
         const rows = await query(
             'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, workgroup_id, event_category, is_online ]
+            [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
@@ -1171,24 +1243,32 @@ app.get('/admin', async (req, res) => {
 });
 
 app.get('/admin/:id', async (req, res) => {
-    const { id } = req.params;
-    const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
-
     try {
-        const rows = await query('SELECT * FROM Admin WHERE id = $1', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+        console.log('Cookies recibidas:', req.cookies); // 👀 Imprime las cookies en la consola
+        const { id } = req.params;
+        const workgroupId = req.cookies.workgroup_id; // Obtener workgroup_id de la cookie
 
-        // Verificar si el admin pertenece al workgroup actual
-        const membershipCheck = await query('SELECT * FROM membership WHERE admin_id = $1 AND workgroup_id = $2', [id, workgroupId]);
-        if (membershipCheck.length === 0) {
-            return res.status(403).json({ message: 'Este administrador no pertenece al grupo de trabajo actual.' });
+        if (!workgroupId) {
+            return res.status(403).json({ message: 'No autorizado: Falta workgroup_id' });
         }
 
-        res.json({ message: 'Success', data: rows[0] });
+        const adminData = await db.query(
+            'SELECT * FROM admin WHERE id = $1 AND workgroup_id = $2',
+            [id, workgroupId]
+        );
+
+        if (adminData.rowCount === 0) {
+            return res.status(404).json({ message: 'Administrador no encontrado' });
+        }
+
+        res.json({ data: adminData.rows[0] });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error al obtener perfil del administrador:', error);
+        res.status(500).json({ message: 'Error interno del servidor' });
     }
 });
+
+
 
 
 app.post('/admin', async (req, res) => {
@@ -1230,33 +1310,54 @@ app.delete('/admin/:id', async (req, res) => {
     }
 });
 
-app.post('/admin-login', async (req, res) => {
+app.post('/admin-login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Buscar al administrador por correo electrónico
+        // Buscar al administrador
         const admin = await query('SELECT * FROM Admin WHERE email = $1', [email]);
 
         if (admin.length === 0) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
         // Verificar la contraseña
         const isMatch = await bcrypt.compare(password, admin[0].password);
         if (!isMatch) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
-        // Obtener el workgroup_id de la tabla membership
+        // Obtener grupo de trabajo y rol
         const membership = await query('SELECT workgroup_id, role_id FROM membership WHERE admin_id = $1', [admin[0].id]);
-        const workgroup_id = membership.length > 0 ? membership[0].workgroup_id : null;
-        const role_id = membership.length > 0 ? membership[0].role_id : null; // Obtener role_id
 
-        // Crear un token
-        const token = jwt.sign({ id: admin[0].id, workgroup_id, role_id }, 'tu_secreto_aqui', { expiresIn: '1h' });
+        if (membership.length === 0) {
+            return res.status(403).json({ error: "No tienes permisos para acceder a un grupo de trabajo." });
+        }
 
-        res.json({ message: 'Inicio de sesión exitoso', token, workgroup_id, role_id, user_id: admin[0].id }); // Agregar role_id aquí
+        const { workgroup_id, role_id } = membership[0];
+
+        // Crear un token con información extra
+        const token = jwt.sign(
+            { 
+                id: admin[0].id, 
+                userType: "admin", 
+                workgroup_id, 
+                role_id 
+            },
+            process.env.JWT_SECRET, 
+            { expiresIn: '8h' }
+        );
+
+        // Establecer el token en una cookie segura
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production", // En producción, se usa HTTPS
+            sameSite: "Lax"
+        });
+
+        res.json({ message: 'Inicio de sesión exitoso', workgroup_id, role_id, user_id: admin[0].id });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: 'Error del servidor' });
     }
 });
@@ -1534,6 +1635,15 @@ app.put('/users/:user_id/preferences', async (req, res) => {
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
+
+/***************************************************************
+ *                   CERRAR SESIÓN GLOBAL
+ * ************************************************************/
+app.post('/logout', (req, res) => {
+    res.clearCookie("token", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Strict" });
+    res.json({ message: "Sesión cerrada" });
+});
+
 
 /******************************************************************************/
 app.listen(PORT, () => {
