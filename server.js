@@ -91,7 +91,16 @@ const loginLimiter = rateLimit({
 
 const authenticateToken = (req, res, next) => {
     try {
-        const token = req.cookies.token;
+        // Intentar obtener el token desde el encabezado Authorization
+        const authHeader = req.headers['authorization'];
+        const tokenFromHeader = authHeader && authHeader.split(' ')[1]; // Formato: "Bearer <token>"
+
+        // Intentar obtener el token desde la cookie
+        const tokenFromCookie = req.cookies.token;
+
+        // Usar el token del encabezado si está presente, de lo contrario usar el de la cookie
+        const token = tokenFromHeader || tokenFromCookie;
+
         if (!token) {
             return res.status(401).json({ error: "No autorizado, token faltante" });
         }
@@ -100,7 +109,7 @@ const authenticateToken = (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
         // Validar que el token contenga los datos necesarios
-        if (!decoded.id || !decoded.userType) {
+        if (!decoded.id || !decoded.userType || !decoded.workgroup_id) { // 👀 Asegúrate de validar workgroup_id
             return res.status(403).json({ error: "Token inválido, datos insuficientes" });
         }
 
@@ -1348,14 +1357,21 @@ app.post('/admin-login', loginLimiter, async (req, res) => {
             { expiresIn: '8h' }
         );
 
-        // Establecer el token en una cookie segura
+        // Establecer el token en una cookie segura (para la web)
         res.cookie("token", token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production", // En producción, se usa HTTPS
             sameSite: "Lax"
         });
 
-        res.json({ message: 'Inicio de sesión exitoso', workgroup_id, role_id, user_id: admin[0].id });
+        // Enviar el token en el cuerpo de la respuesta (para móvil)
+        res.json({ 
+            message: 'Inicio de sesión exitoso', 
+            token, // Envía el token aquí
+            workgroup_id, 
+            role_id, 
+            user_id: admin[0].id 
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error del servidor' });
