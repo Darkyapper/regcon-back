@@ -149,6 +149,30 @@ app.get('/auth/status', authenticateToken, (req, res) => {
     }
 });
 
+app.get('/auth/me', authenticateToken, (req, res) => {
+    /*console.log("Cookies recibidas en /auth/me:", req.cookies);*/
+    
+    const token = req.cookies.token; // Obtener el token desde la cookie
+    if (!token) {
+        return res.status(401).json({ authenticated: false, error: "No autorizado, token no encontrado" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json({ 
+            authenticated: true, 
+            token,
+            user_id: decoded.id, 
+            workgroup_id: decoded.workgroup_id, 
+            role_id: decoded.role_id 
+        });
+    } catch (error) {
+        res.status(401).json({ authenticated: false, error: "Token inválido" });
+    }
+});
+
+
+
 
 /***************************************************************
  *                        SUBIR IMAGENES
@@ -194,6 +218,23 @@ app.post('/upload', upload.single('image'), async (req, res) => {
  * 
  * 
  * ************************************************************/
+
+/***************************************************************
+ *                Probar Cookies y Tokens Web
+ * ************************************************************/
+
+app.get('/debug-token', (req, res) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Token no encontrado' });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json(decoded);  // Muestra el contenido del token
+    } catch (error) {
+        res.status(403).json({ error: 'Token inválido' });
+    }
+});
+
 
 /***************************************************************
  *                CONTROL DE USUARIOS
