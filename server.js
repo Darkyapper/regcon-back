@@ -1307,17 +1307,17 @@ app.get('/admin', async (req, res) => {
 
 app.get('/admin/:id', async (req, res) => {
     try {
-        console.log('Cookies recibidas:', req.cookies); // 👀 Imprime las cookies en la consola
+        /*console.log('Headers recibidos:', req.headers); */// 👀 Imprime los headers
         const { id } = req.params;
-        const workgroupId = req.cookies.workgroup_id; // Obtener workgroup_id de la cookie
+        const workgroupId = req.headers['x-workgroup-id']; // ✅ Obtener workgroup_id desde los headers
 
         if (!workgroupId) {
             return res.status(403).json({ message: 'No autorizado: Falta workgroup_id' });
         }
 
-        const adminData = await db.query(
-            'SELECT * FROM admin WHERE id = $1 AND workgroup_id = $2',
-            [id, workgroupId]
+        const adminData = await pool.query(
+            'SELECT * FROM admin WHERE id = $1',
+            [id]
         );
 
         if (adminData.rowCount === 0) {
