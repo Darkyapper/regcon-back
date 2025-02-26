@@ -326,11 +326,11 @@ app.delete('/users/:id', async (req, res) => {
  *                CONTROL DE EVENTOS SIN WORKGROUP
  * ************************************************************/
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, workgroup_id, event_category, is_online } = req.body;
+    const { name, event_date, location, description, workgroup_id, event_category, is_online, credits_type} = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, workgroup_id, image, event_category, is_online ]
+            'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online, credits_type ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [name, event_date, location, description, workgroup_id, event_category, is_online, credits_type ]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
@@ -686,12 +686,56 @@ app.get('/event-categories', async (req, res) => {
  *                CONTROL DE TICKECTS CATEGORIES
  * ************************************************************/
 app.post('/ticket-categories', async (req, res) => {
-    const { name, price, description, workgroup_id } = req.body;
+    const { name, price, description, workgroup_id, tickets_quantity, event_id } = req.body;
+
     try {
-        const rows = await query(
-            'INSERT INTO TicketCategories (name, price, description, workgroup_id) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, price, description, workgroup_id]
+        // 1. Obtener el tipo de crédito del evento
+        const event = await query(
+            'SELECT credits_type FROM events WHERE id = $1',
+            [event_id]
         );
+
+        if (event.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        const creditsType = event[0].credits_type;
+
+        // 2. Verificar el tipo de crédito
+        if (creditsType === 'prepaid') {
+            // Obtener el saldo de créditos del workgroup
+            const workgroup = await query(
+                'SELECT credits_balance FROM workgroups WHERE id = $1',
+                [workgroup_id]
+            );
+
+            if (workgroup.length === 0) {
+                return res.status(404).json({ error: 'Workgroup not found' });
+            }
+
+            const creditsBalance = workgroup[0].credits_balance;
+
+            // Verificar si hay suficientes créditos
+            if (creditsBalance < tickets_quantity) {
+                return res.status(400).json({ error: 'Not enough credits' });
+            }
+        }
+
+        // 3. Insertar la categoría de boletos
+        const rows = await query(
+            'INSERT INTO ticketcategories (name, price, description, workgroup_id, tickets_quantity) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [name, price, description, workgroup_id, tickets_quantity]
+        );
+
+        // 4. Actualizar el saldo de créditos (solo para prepaid)
+        if (creditsType === 'prepaid') {
+            await query(
+                'UPDATE workgroups SET credits_balance = credits_balance - $1 WHERE id = $2',
+                [tickets_quantity, workgroup_id]
+            );
+        }
+
+        // 5. Devolver una respuesta
         res.json({ message: 'Ticket category created successfully', data: rows[0] });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -721,7 +765,7 @@ app.get('/ticket-categories/:id', async (req, res) => {
     }
 });
 
-app.put('/ticket-categories/:id', async (req, res) => {
+/*app.put('/ticket-categories/:id', async (req, res) => {
     const { id } = req.params;
     const { name, price, description, workgroup_id } = req.body;
     try {
@@ -734,7 +778,7 @@ app.put('/ticket-categories/:id', async (req, res) => {
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
-});
+});*/
 
 app.delete('/ticket-categories/:id', async (req, res) => {
     const { id } = req.params;
@@ -887,34 +931,6 @@ app.get('/tickets/:code', async (req, res) => {
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
         res.status(500).json({ error: error.message });
-    }
-});
-
-app.post('/tickets', async (req, res) => {
-    const { code, name, category_id, status, workgroup_id } = req.body;
-    try {
-        const rows = await query(
-            'INSERT INTO Tickets (code, name, category_id, status, workgroup_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [code, name, category_id, status, workgroup_id]
-        );
-        res.json({ message: 'Ticket created successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.put('/tickets/:code', async (req, res) => {
-    const { code } = req.params;
-    const { name, category_id, status, workgroup_id } = req.body;
-    try {
-        const rows = await query(
-            `UPDATE Tickets SET name = $1, category_id = $2, status = $3, workgroup_id = $4 WHERE code = $5 RETURNING *`,
-            [name, category_id, status, workgroup_id, code]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Ticket not found' });
-        res.json({ message: 'Ticket updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
     }
 });
 
@@ -1394,7 +1410,7 @@ app.post('/admin-login', loginLimiter, async (req, res) => {
         const membership = await query('SELECT workgroup_id, role_id FROM membership WHERE admin_id = $1', [admin[0].id]);
 
         if (membership.length === 0) {
-            return res.status(403).json({ error: "No tienes permisos para acceder a un grupo de trabajo." });
+            return res.status(403).json({ error: "Actualmente no formas parte de un grupo de trabajo." });
         }
 
         const { workgroup_id, role_id } = membership[0];
