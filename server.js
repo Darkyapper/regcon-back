@@ -1785,7 +1785,7 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
             line_items: [
                 {
                     price_data: {
-                        currency: 'usd',
+                        currency: 'mxn',
                         product_data: {
                             name: `${category_name} - ${event_name}`, // Nombre del boleto + evento
                         },
