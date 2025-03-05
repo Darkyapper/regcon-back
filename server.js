@@ -9,6 +9,9 @@ require('dotenv').config();
 const axios = require('axios');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { createClient } = require('@supabase/supabase-js');
+
 
 
 const app = express();
@@ -65,6 +68,12 @@ async function query(sql, params = []) {
         client.release();
     }
 }
+
+// Configuración de Supabase (supabase-js)
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
 
 // Verifica la conexión a la base de datos
 pool.connect((err) => {
@@ -1743,6 +1752,68 @@ app.put('/users/:user_id/preferences', async (req, res) => {
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
+
+/***************************************************************
+ *                   MANEJO DE PAGOS
+ * ************************************************************/
+// Crear una sesión de pago (Stripe Checkout)
+app.post('/create-checkout-session', authenticateToken, async (req, res) => {
+    try {
+        const { user_id } = req.user;  // El usuario viene del token
+        const { ticket_code } = req.body;  // Se envía en el body el código del boleto a comprar
+
+        if (!ticket_code) {
+            return res.status(400).json({ error: "Se requiere el código del boleto." });
+        }
+
+        // Consultar la información completa del boleto desde la vista `ticketfullinfo`
+        const { data, error } = await supabase
+            .from("ticketfullinfo") // Asegúrate de que esta sea la tabla correcta
+            .select("category_name, category_price, workgroup_id, event_name") // Solo seleccionamos los campos necesarios
+            .eq("code", ticket_code)  // Filtrar por el código del boleto
+            .single(); // Obtén solo un resultado, ya que 'ticket_code' debería ser único
+
+        if (error || !data) {
+            return res.status(404).json({ error: "Boleto no encontrado." });
+        }
+
+        const { category_name, category_price, workgroup_id, event_name } = data;
+
+        // Crear una sesión de pago con Stripe
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: `${category_name} - ${event_name}`, // Nombre del boleto + evento
+                        },
+                        unit_amount: Math.round(category_price * 100), // Convertir a centavos
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            success_url: `${process.env.CLIENT_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.CLIENT_URL}/cancel`,
+            metadata: {
+                user_id,
+                workgroup_id, // Se extrae desde la base de datos
+                ticket_code // Guardamos el código del boleto en metadata
+            }
+        });
+
+        // Responder con la URL de Stripe Checkout
+        res.json({ url: session.url });
+
+    } catch (error) {
+        console.error('Error al crear la sesión de pago:', error);
+        res.status(500).json({ error: 'Error al crear la sesión de pago' });
+    }
+});
+
+
 
 /***************************************************************
  *                   CERRAR SESIÓN GLOBAL
