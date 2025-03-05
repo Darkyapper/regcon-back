@@ -91,29 +91,26 @@ const loginLimiter = rateLimit({
 
 const authenticateToken = (req, res, next) => {
     try {
-        // Intentar obtener el token desde el encabezado Authorization
         const authHeader = req.headers['authorization'];
-        const tokenFromHeader = authHeader && authHeader.split(' ')[1]; // Formato: "Bearer <token>"
-
-        // Intentar obtener el token desde la cookie
+        const tokenFromHeader = authHeader && authHeader.split(' ')[1]; 
         const tokenFromCookie = req.cookies.token;
-
-        // Usar el token del encabezado si está presente, de lo contrario usar el de la cookie
         const token = tokenFromHeader || tokenFromCookie;
 
         if (!token) {
             return res.status(401).json({ error: "No autorizado, token faltante" });
         }
 
-        // Verificar el token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // Validar que el token contenga los datos necesarios
-        if (!decoded.id || !decoded.userType || !decoded.workgroup_id) { // 👀 Asegúrate de validar workgroup_id
-            return res.status(403).json({ error: "Token inválido, datos insuficientes" });
+
+        // Validación de usuario o administrador
+        const isUser = decoded.id && (decoded.userType === "user" && !decoded.workgroup_id);  // Usuarios sin workgroup_id
+        const isAdmin = decoded.id && decoded.userType === "admin" && decoded.workgroup_id;  // Administradores con workgroup_id
+
+        if (!isUser && !isAdmin) {
+            return res.status(403).json({ error: "Token inválido, datos insuficientes", decoded });
         }
 
-        req.user = decoded; // Guardar los datos en la request para uso posterior
+        req.user = decoded;
         next();
     } catch (error) {
         if (error.name === "TokenExpiredError") {
@@ -124,13 +121,15 @@ const authenticateToken = (req, res, next) => {
     }
 };
 
+
+
 module.exports = authenticateToken;
 
 /***************************************************************
  *                 VERIFICAR LAS SESIONES
  ***************************************************************/
 app.get('/auth/status', authenticateToken, (req, res) => {
-    const token = req.cookies.token; // Obtener el token desde la cookie
+    const token = req.cookies.token;
 
     if (!token) {
         return res.status(401).json({ authenticated: false, error: "No autorizado" });
@@ -138,16 +137,23 @@ app.get('/auth/status', authenticateToken, (req, res) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        res.json({ 
-            authenticated: true, 
-            user_id: decoded.id, 
-            workgroup_id: decoded.workgroup_id, 
-            role_id: decoded.role_id 
-        });
+
+        const response = {
+            authenticated: true,
+            user_id: decoded.id
+        };
+
+        if (decoded.workgroup_id) {
+            response.workgroup_id = decoded.workgroup_id;
+            response.role_id = decoded.role_id;
+        }
+
+        res.json(response);
     } catch (error) {
         res.status(401).json({ authenticated: false, error: "Token inválido" });
     }
 });
+
 
 app.get('/auth/me', authenticateToken, (req, res) => {
     /*console.log("Cookies recibidas en /auth/me:", req.cookies);*/
@@ -1623,11 +1629,11 @@ app.put('/eventpage/:event_id', async (req, res) => {
 /***************************************************************
  *                INICIO DE SESIÓN
  * ************************************************************/
-app.post('/user-login', async (req, res) => {
+app.post('/user-login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Buscar al usuario por correo electrónico
+        // Buscar al usuario
         const user = await query('SELECT * FROM Users WHERE email = $1', [email]);
 
         if (user.length === 0) {
@@ -1640,25 +1646,41 @@ app.post('/user-login', async (req, res) => {
             return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
-        // Generar un token JWT con la información del usuario
+        // Incluir más datos en el token si es necesario
         const token = jwt.sign(
-            { id: user[0].id, email: user[0].email },
-            'tu_secreto_aqui', // Cambia esto a una clave secreta segura
-            { expiresIn: '1h' }
+            { 
+                id: user[0].id, 
+                userType: "user"
+            },
+            process.env.JWT_SECRET, 
+            { expiresIn: '8h' }
         );
 
-        res.json({
-            message: 'Inicio de sesión exitoso',
-            token,
+        // Establecer el token en una cookie segura para la web
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production", // Solo en producción
+            sameSite: "Lax"
+        });
+
+        // Responder con el token (para apps móviles)
+        res.json({ 
+            message: 'Inicio de sesión exitoso', 
+            token, 
             user_id: user[0].id,
             first_name: user[0].first_name,
             last_name: user[0].last_name,
             email: user[0].email
         });
+
     } catch (error) {
         res.status(500).json({ error: 'Error del servidor' });
     }
 });
+/***************************************************************
+ *          ACCIONES PARA PAGAR CON STRIPE (USUARIO)
+ * ************************************************************/
+
 
 /***************************************************************
  *               PREFERENCIAS DEL USUARIO
