@@ -565,26 +565,60 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
  * ************************************************************/
 app.get('/all-events', async (req, res) => {
     try {
-        // Obtener los parámetros de paginación (con valores por defecto)
-        const limit = parseInt(req.query.limit) || 10; // Por defecto, 100 registros por página
-        const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
+        // Parámetros de consulta
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = parseInt(req.query.offset) || 0;
+        const categoryId = req.query.category_id;
+        const workgroupId = req.query.workgroup_id;
+        const isOnline = req.query.is_online;
+        const date = req.query.date;
+        const nearest = req.query.nearest; // Si es true, ordenará por la fecha más cercana
 
-        // Consulta SQL con paginación
-        const queryText = 'SELECT * FROM event_details ORDER BY event_id LIMIT $1 OFFSET $2';
-        const queryParams = [limit, offset];
+        // Construir la consulta SQL dinámicamente
+        let queryText = "SELECT * FROM event_details WHERE status = 1"; // Solo eventos públicos
+        let queryParams = [];
 
-        // Ejecutar la consulta
-        const rows = await query(queryText, queryParams); // Cambio aquí: no desestructurar
-
-        // Verificar si hay datos
-        if (!rows || rows.length === 0) {
-            return res.status(404).json({ message: 'No se encontraron eventos.' });
+        if (categoryId) {
+            queryText += " AND category_id = $" + (queryParams.length + 1);
+            queryParams.push(categoryId);
         }
 
-        // Devolver los datos paginados
+        if (workgroupId) {
+            queryText += " AND workgroup_id = $" + (queryParams.length + 1);
+            queryParams.push(workgroupId);
+        }
+
+        if (isOnline) {
+            queryText += " AND is_online = $" + (queryParams.length + 1);
+            queryParams.push(isOnline);
+        }
+
+        if (date) {
+            queryText += " AND event_date::DATE = $" + (queryParams.length + 1);
+            queryParams.push(date);
+        }
+
+        // Ordenamiento por fecha más cercana
+        if (nearest === "true") {
+            queryText += " ORDER BY event_date ASC";
+        } else {
+            queryText += " ORDER BY event_id";
+        }
+
+        // Agregar paginación
+        queryText += " LIMIT $" + (queryParams.length + 1) + " OFFSET $" + (queryParams.length + 2);
+        queryParams.push(limit, offset);
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: "No se encontraron eventos." });
+        }
+
         res.json({
-            message: 'Success',
-            data: rows, // Asegúrate de que los datos estén aquí
+            message: "Success",
+            data: rows,
             pagination: {
                 limit: limit,
                 offset: offset,
@@ -1686,10 +1720,6 @@ app.post('/user-login', loginLimiter, async (req, res) => {
         res.status(500).json({ error: 'Error del servidor' });
     }
 });
-/***************************************************************
- *          ACCIONES PARA PAGAR CON STRIPE (USUARIO)
- * ************************************************************/
-
 
 /***************************************************************
  *               PREFERENCIAS DEL USUARIO
@@ -1812,6 +1842,76 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Error al crear la sesión de pago' });
     }
 });
+/***************************************************************
+ *                       EVENTOS
+ * ************************************************************/
+/*app.get("/all-event", async (req, res) => {
+    try {
+        // Parámetros de consulta
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = parseInt(req.query.offset) || 0;
+        const categoryId = req.query.category_id;
+        const workgroupId = req.query.workgroup_id;
+        const isOnline = req.query.is_online;
+        const date = req.query.date;
+        const nearest = req.query.nearest; // Si es true, ordenará por la fecha más cercana
+
+        // Construir la consulta SQL dinámicamente
+        let queryText = "SELECT * FROM event_details WHERE 1=1"; // WHERE 1=1 permite añadir condiciones dinámicamente
+        let queryParams = [];
+
+        if (categoryId) {
+            queryText += " AND category_id = $" + (queryParams.length + 1);
+            queryParams.push(categoryId);
+        }
+
+        if (workgroupId) {
+            queryText += " AND workgroup_id = $" + (queryParams.length + 1);
+            queryParams.push(workgroupId);
+        }
+
+        if (isOnline) {
+            queryText += " AND is_online = $" + (queryParams.length + 1);
+            queryParams.push(isOnline);
+        }
+
+        if (date) {
+            queryText += " AND event_date::DATE = $" + (queryParams.length + 1); // Convertir a DATE para que compare sin hora
+            queryParams.push(date);
+        }
+
+        // Ordenamiento por fecha más cercana
+        if (nearest === "true") {
+            queryText += " ORDER BY event_date ASC";
+        } else {
+            queryText += " ORDER BY event_id";
+        }
+
+        // Agregar paginación
+        queryText += " LIMIT $" + (queryParams.length + 1) + " OFFSET $" + (queryParams.length + 2);
+        queryParams.push(limit, offset);
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: "No se encontraron eventos." });
+        }
+
+        res.json({
+            message: "Success",
+            data: rows,
+            pagination: {
+                limit: limit,
+                offset: offset,
+                next_offset: offset + limit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+*/
 
 
 
@@ -1819,10 +1919,17 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
  *                   CERRAR SESIÓN GLOBAL
  * ************************************************************/
 app.post('/logout', (req, res) => {
-    res.clearCookie("token", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "Strict" });
-    res.json({ message: "Sesión cerrada" });
-});
+    // Eliminar la cookie de sesión
+    res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production", // Solo en producción
+        sameSite: "Strict",
+        path: "/", // Asegúrate de que la ruta sea la correcta
+    });
 
+    // Enviar una respuesta de éxito
+    res.status(200).json({ message: "Sesión cerrada correctamente" });
+});
 
 /******************************************************************************/
 app.listen(PORT, () => {
