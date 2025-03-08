@@ -2,10 +2,16 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const multer = require('multer');
+const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken'); 
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { createClient } = require('@supabase/supabase-js');
+
 const FormData = require('form-data');
 
 const app = express();
@@ -26,11 +32,22 @@ const upload = multer({
 });
 
 
+const allowedOrigins = ['http://localhost:5173', 'https://toolregcon.vercel.app'];
+
 app.use(cors({
-    origin: '*', // Permitir todas las solicitudes de origen
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    credentials: true
 }));
 
 app.use(express.json());
+app.use(cookieParser());
+app.use(helmet());
 
 // Configuración de conexión a Supabase PostgreSQL
 const pool = new Pool({
@@ -52,6 +69,12 @@ async function query(sql, params = []) {
     }
 }
 
+// Configuración de Supabase (supabase-js)
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
+
 // Verifica la conexión a la base de datos
 pool.connect((err) => {
     if (err) {
@@ -68,6 +91,103 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 5, // Máximo 5 intentos
+    message: { error: "Demasiados intentos de inicio de sesión. Inténtalo más tarde." }
+});
+
+const authenticateToken = (req, res, next) => {
+    try {
+        const authHeader = req.headers['authorization'];
+        const tokenFromHeader = authHeader && authHeader.split(' ')[1];
+        const tokenFromCookie = req.cookies.token;
+        const token = tokenFromHeader || tokenFromCookie;
+
+        if (!token) {
+            return res.status(401).json({ error: "No autorizado, token faltante" });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        // Validación de usuario o administrador
+        const isUser = decoded.id && (decoded.userType === "user" && !decoded.workgroup_id);  // Usuarios sin workgroup_id
+        const isAdmin = decoded.id && decoded.userType === "admin" && decoded.workgroup_id;  // Administradores con workgroup_id
+
+        if (!isUser && !isAdmin) {
+            return res.status(403).json({ error: "Token inválido, datos insuficientes", decoded });
+        }
+
+        req.user = decoded;
+        next();
+    } catch (error) {
+        if (error.name === "TokenExpiredError") {
+            return res.status(401).json({ error: "Token expirado, inicie sesión nuevamente" });
+        } else {
+            return res.status(403).json({ error: "Token inválido" });
+        }
+    }
+};
+
+
+
+module.exports = authenticateToken;
+
+/***************************************************************
+ *                 VERIFICAR LAS SESIONES
+ ***************************************************************/
+app.get('/auth/status', authenticateToken, (req, res) => {
+    const token = req.cookies.token;
+
+    if (!token) {
+        return res.status(401).json({ authenticated: false, error: "No autorizado" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        const response = {
+            authenticated: true,
+            user_id: decoded.id
+        };
+
+        if (decoded.workgroup_id) {
+            response.workgroup_id = decoded.workgroup_id;
+            response.role_id = decoded.role_id;
+        }
+
+        res.json(response);
+    } catch (error) {
+        res.status(401).json({ authenticated: false, error: "Token inválido" });
+    }
+});
+
+
+app.get('/auth/me', authenticateToken, (req, res) => {
+    /*console.log("Cookies recibidas en /auth/me:", req.cookies);*/
+
+    const token = req.cookies.token; // Obtener el token desde la cookie
+    if (!token) {
+        return res.status(401).json({ authenticated: false, error: "No autorizado, token no encontrado" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json({
+            authenticated: true,
+            token,
+            user_id: decoded.id,
+            workgroup_id: decoded.workgroup_id,
+            role_id: decoded.role_id
+        });
+    } catch (error) {
+        res.status(401).json({ authenticated: false, error: "Token inválido" });
+    }
+});
+
+
+
 
 /***************************************************************
  *                        SUBIR IMAGENES
@@ -115,6 +235,23 @@ app.post('/upload', upload.single('image'), async (req, res) => {
  * ************************************************************/
 
 /***************************************************************
+ *                Probar Cookies y Tokens Web
+ * ************************************************************/
+
+app.get('/debug-token', (req, res) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Token no encontrado' });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        res.json(decoded);  // Muestra el contenido del token
+    } catch (error) {
+        res.status(403).json({ error: 'Token inválido' });
+    }
+});
+
+
+/***************************************************************
  *                CONTROL DE USUARIOS
  * ************************************************************/
 app.get('/users', async (req, res) => {
@@ -138,11 +275,11 @@ app.get('/users/:id', async (req, res) => {
 });
 
 app.post('/users', async (req, res) => {
-    const { first_name, last_name, email, phone, password, birthday} = req.body;
+    const { first_name, last_name, email, phone, password, birthday } = req.body;
 
     if (!password || password.length < 8) {
-        return res.status(400).json({ 
-            error: 'La contraseña es requerida y debe tener al menos 8 caracteres.' 
+        return res.status(400).json({
+            error: 'La contraseña es requerida y debe tener al menos 8 caracteres.'
         });
     }
 
@@ -156,9 +293,9 @@ app.post('/users', async (req, res) => {
             [first_name, last_name, email, phone, hashedPassword, birthday]
         );
 
-        res.json({ 
-            message: 'Usuario registrado exitosamente.', 
-            data: rows[0] 
+        res.json({
+            message: 'Usuario registrado exitosamente.',
+            data: rows[0]
         });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -204,11 +341,11 @@ app.delete('/users/:id', async (req, res) => {
  *                CONTROL DE EVENTOS SIN WORKGROUP
  * ************************************************************/
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, workgroup_id, event_category, is_online } = req.body;
+    const { name, event_date, location, description, workgroup_id, event_category, is_online, credits_type } = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, event_date, location, description, workgroup_id, event_category, is_online ]
+            'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online, credits_type ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [name, event_date, location, description, workgroup_id, event_category, is_online, credits_type]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
@@ -431,26 +568,60 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
  * ************************************************************/
 app.get('/all-events', async (req, res) => {
     try {
-        // Obtener los parámetros de paginación (con valores por defecto)
-        const limit = parseInt(req.query.limit) || 10; // Por defecto, 100 registros por página
-        const offset = parseInt(req.query.offset) || 0; // Por defecto, empieza desde el primer registro
+        // Parámetros de consulta
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = parseInt(req.query.offset) || 0;
+        const categoryId = req.query.category_id;
+        const workgroupId = req.query.workgroup_id;
+        const isOnline = req.query.is_online;
+        const date = req.query.date;
+        const nearest = req.query.nearest; // Si es true, ordenará por la fecha más cercana
 
-        // Consulta SQL con paginación
-        const queryText = 'SELECT * FROM event_details ORDER BY event_id LIMIT $1 OFFSET $2';
-        const queryParams = [limit, offset];
+        // Construir la consulta SQL dinámicamente
+        let queryText = "SELECT * FROM event_details WHERE status = 1"; // Solo eventos públicos
+        let queryParams = [];
 
-        // Ejecutar la consulta
-        const rows = await query(queryText, queryParams); // Cambio aquí: no desestructurar
-
-        // Verificar si hay datos
-        if (!rows || rows.length === 0) {
-            return res.status(404).json({ message: 'No se encontraron eventos.' });
+        if (categoryId) {
+            queryText += " AND category_id = $" + (queryParams.length + 1);
+            queryParams.push(categoryId);
         }
 
-        // Devolver los datos paginados
+        if (workgroupId) {
+            queryText += " AND workgroup_id = $" + (queryParams.length + 1);
+            queryParams.push(workgroupId);
+        }
+
+        if (isOnline) {
+            queryText += " AND is_online = $" + (queryParams.length + 1);
+            queryParams.push(isOnline);
+        }
+
+        if (date) {
+            queryText += " AND event_date::DATE = $" + (queryParams.length + 1);
+            queryParams.push(date);
+        }
+
+        // Ordenamiento por fecha más cercana
+        if (nearest === "true") {
+            queryText += " ORDER BY event_date ASC";
+        } else {
+            queryText += " ORDER BY event_id";
+        }
+
+        // Agregar paginación
+        queryText += " LIMIT $" + (queryParams.length + 1) + " OFFSET $" + (queryParams.length + 2);
+        queryParams.push(limit, offset);
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: "No se encontraron eventos." });
+        }
+
         res.json({
-            message: 'Success',
-            data: rows, // Asegúrate de que los datos estén aquí
+            message: "Success",
+            data: rows,
             pagination: {
                 limit: limit,
                 offset: offset,
@@ -563,16 +734,61 @@ app.get('/event-categories', async (req, res) => {
     }
 });
 
+
 /***************************************************************
  *                CONTROL DE TICKECTS CATEGORIES
  * ************************************************************/
 app.post('/ticket-categories', async (req, res) => {
-    const { name, price, description, workgroup_id } = req.body;
+    const { name, price, description, workgroup_id, tickets_quantity, event_id } = req.body;
+
     try {
-        const rows = await query(
-            'INSERT INTO TicketCategories (name, price, description, workgroup_id) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, price, description, workgroup_id]
+        // 1. Obtener el tipo de crédito del evento
+        const event = await query(
+            'SELECT credits_type FROM events WHERE id = $1',
+            [event_id]
         );
+
+        if (event.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        const creditsType = event[0].credits_type;
+
+        // 2. Verificar el tipo de crédito
+        if (creditsType === 'prepaid') {
+            // Obtener el saldo de créditos del workgroup
+            const workgroup = await query(
+                'SELECT credits_balance FROM workgroups WHERE id = $1',
+                [workgroup_id]
+            );
+
+            if (workgroup.length === 0) {
+                return res.status(404).json({ error: 'Workgroup not found' });
+            }
+
+            const creditsBalance = workgroup[0].credits_balance;
+
+            // Verificar si hay suficientes créditos
+            if (creditsBalance < tickets_quantity) {
+                return res.status(400).json({ error: 'Not enough credits' });
+            }
+        }
+
+        // 3. Insertar la categoría de boletos
+        const rows = await query(
+            'INSERT INTO ticketcategories (name, price, description, workgroup_id, tickets_quantity) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [name, price, description, workgroup_id, tickets_quantity]
+        );
+
+        // 4. Actualizar el saldo de créditos (solo para prepaid)
+        if (creditsType === 'prepaid') {
+            await query(
+                'UPDATE workgroups SET credits_balance = credits_balance - $1 WHERE id = $2',
+                [tickets_quantity, workgroup_id]
+            );
+        }
+
+        // 5. Devolver una respuesta
         res.json({ message: 'Ticket category created successfully', data: rows[0] });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -602,7 +818,7 @@ app.get('/ticket-categories/:id', async (req, res) => {
     }
 });
 
-app.put('/ticket-categories/:id', async (req, res) => {
+/*app.put('/ticket-categories/:id', async (req, res) => {
     const { id } = req.params;
     const { name, price, description, workgroup_id } = req.body;
     try {
@@ -615,7 +831,7 @@ app.put('/ticket-categories/:id', async (req, res) => {
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
-});
+});*/
 
 app.delete('/ticket-categories/:id', async (req, res) => {
     const { id } = req.params;
@@ -771,34 +987,6 @@ app.get('/tickets/:code', async (req, res) => {
     }
 });
 
-app.post('/tickets', async (req, res) => {
-    const { code, name, category_id, status, workgroup_id } = req.body;
-    try {
-        const rows = await query(
-            'INSERT INTO Tickets (code, name, category_id, status, workgroup_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [code, name, category_id, status, workgroup_id]
-        );
-        res.json({ message: 'Ticket created successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.put('/tickets/:code', async (req, res) => {
-    const { code } = req.params;
-    const { name, category_id, status, workgroup_id } = req.body;
-    try {
-        const rows = await query(
-            `UPDATE Tickets SET name = $1, category_id = $2, status = $3, workgroup_id = $4 WHERE code = $5 RETURNING *`,
-            [name, category_id, status, workgroup_id, code]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Ticket not found' });
-        res.json({ message: 'Ticket updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
 app.delete('/tickets/:code', async (req, res) => {
     const { code } = req.params;
     try {
@@ -854,6 +1042,17 @@ app.get('/ticket-view-code/:code', async (req, res) => {
     }
 });
 
+app.get('/ticket-list/:code', async (req, res) => {
+    const { code } = req.params;
+
+    try {
+        const rows = await query('SELECT * FROM TicketFullInfo WHERE ticket_category_id = $1', [code]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Esta categoria de boletos no existe.' });
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.get('/ticket-view/:code', async (req, res) => {
     const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
@@ -1187,24 +1386,32 @@ app.get('/admin', async (req, res) => {
 });
 
 app.get('/admin/:id', async (req, res) => {
-    const { id } = req.params;
-    const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
-
     try {
-        const rows = await query('SELECT * FROM Admin WHERE id = $1', [id]);
-        if (rows.length === 0) return res.status(404).json({ message: 'Admin not found' });
+        /*console.log('Headers recibidos:', req.headers); */// 👀 Imprime los headers
+        const { id } = req.params;
+        const workgroupId = req.headers['x-workgroup-id']; // ✅ Obtener workgroup_id desde los headers
 
-        // Verificar si el admin pertenece al workgroup actual
-        const membershipCheck = await query('SELECT * FROM membership WHERE admin_id = $1 AND workgroup_id = $2', [id, workgroupId]);
-        if (membershipCheck.length === 0) {
-            return res.status(403).json({ message: 'Este administrador no pertenece al grupo de trabajo actual.' });
+        if (!workgroupId) {
+            return res.status(403).json({ message: 'No autorizado: Falta workgroup_id' });
         }
 
-        res.json({ message: 'Success', data: rows[0] });
+        const adminData = await pool.query(
+            'SELECT * FROM admin WHERE id = $1',
+            [id]
+        );
+
+        if (adminData.rowCount === 0) {
+            return res.status(404).json({ message: 'Administrador no encontrado' });
+        }
+
+        res.json({ data: adminData.rows[0] });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error al obtener perfil del administrador:', error);
+        res.status(500).json({ message: 'Error interno del servidor' });
     }
 });
+
+
 
 
 app.post('/admin', async (req, res) => {
@@ -1246,33 +1453,61 @@ app.delete('/admin/:id', async (req, res) => {
     }
 });
 
-app.post('/admin-login', async (req, res) => {
+app.post('/admin-login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Buscar al administrador por correo electrónico
+        // Buscar al administrador
         const admin = await query('SELECT * FROM Admin WHERE email = $1', [email]);
 
         if (admin.length === 0) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
         // Verificar la contraseña
         const isMatch = await bcrypt.compare(password, admin[0].password);
         if (!isMatch) {
-            return res.status(401).json({ error: 'Correo o contrasñea inválidos' });
+            return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
-        // Obtener el workgroup_id de la tabla membership
+        // Obtener grupo de trabajo y rol
         const membership = await query('SELECT workgroup_id, role_id FROM membership WHERE admin_id = $1', [admin[0].id]);
-        const workgroup_id = membership.length > 0 ? membership[0].workgroup_id : null;
-        const role_id = membership.length > 0 ? membership[0].role_id : null; // Obtener role_id
 
-        // Crear un token
-        const token = jwt.sign({ id: admin[0].id, workgroup_id, role_id }, 'tu_secreto_aqui', { expiresIn: '1h' });
+        if (membership.length === 0) {
+            return res.status(403).json({ error: "Actualmente no formas parte de un grupo de trabajo." });
+        }
 
-        res.json({ message: 'Inicio de sesión exitoso', token, workgroup_id, role_id, user_id: admin[0].id }); // Agregar role_id aquí
+        const { workgroup_id, role_id } = membership[0];
+
+        // Crear un token con información extra
+        const token = jwt.sign(
+            {
+                id: admin[0].id,
+                userType: "admin",
+                workgroup_id,
+                role_id
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        // Establecer el token en una cookie segura (para la web)
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production", // En producción, se usa HTTPS
+            sameSite: "Lax"
+        });
+
+        // Enviar el token en el cuerpo de la respuesta (para móvil)
+        res.json({
+            message: 'Inicio de sesión exitoso',
+            token, // Envía el token aquí
+            workgroup_id,
+            role_id,
+            user_id: admin[0].id
+        });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: 'Error del servidor' });
     }
 });
@@ -1350,8 +1585,8 @@ app.get('/eventattendancesummary', async (req, res) => {
 
     try {
         // Composición de la consulta
-        const queryText = 'SELECT * FROM eventattendancesummary WHERE workgroup_id = $1' + 
-                          (eventId ? ' AND event_id = $2' : '');
+        const queryText = 'SELECT * FROM eventattendancesummary WHERE workgroup_id = $1' +
+            (eventId ? ' AND event_id = $2' : '');
         const queryParams = eventId ? [workgroupId, eventId] : [workgroupId];
 
         const rows = await query(queryText, queryParams);
@@ -1452,11 +1687,11 @@ app.put('/eventpage/:event_id', async (req, res) => {
 /***************************************************************
  *                INICIO DE SESIÓN
  * ************************************************************/
-app.post('/user-login', async (req, res) => {
+app.post('/user-login', loginLimiter, async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Buscar al usuario por correo electrónico
+        // Buscar al usuario
         const user = await query('SELECT * FROM Users WHERE email = $1', [email]);
 
         if (user.length === 0) {
@@ -1469,13 +1704,24 @@ app.post('/user-login', async (req, res) => {
             return res.status(401).json({ error: 'Correo o contraseña inválidos' });
         }
 
-        // Generar un token JWT con la información del usuario
+        // Incluir más datos en el token si es necesario
         const token = jwt.sign(
-            { id: user[0].id, email: user[0].email },
-            'tu_secreto_aqui', // Cambia esto a una clave secreta segura
-            { expiresIn: '1h' }
+            {
+                id: user[0].id,
+                userType: "user"
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
         );
 
+        // Establecer el token en una cookie segura para la web
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production", // Solo en producción
+            sameSite: "Lax"
+        });
+
+        // Responder con el token (para apps móviles)
         res.json({
             message: 'Inicio de sesión exitoso',
             token,
@@ -1484,6 +1730,7 @@ app.post('/user-login', async (req, res) => {
             last_name: user[0].last_name,
             email: user[0].email
         });
+
     } catch (error) {
         res.status(500).json({ error: 'Error del servidor' });
     }
@@ -1549,6 +1796,138 @@ app.put('/users/:user_id/preferences', async (req, res) => {
         console.error('Error al actualizar las preferencias:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
+});
+
+/***************************************************************
+ *                   MANEJO DE PAGOS
+ * ************************************************************/
+// Crear una sesión de pago (Stripe Checkout)
+app.post('/create-checkout-session', authenticateToken, async (req, res) => {
+    try {
+        const { user_id } = req.user;  // El usuario viene del token
+        const { ticket_code } = req.body;  // Se envía en el body el código del boleto a comprar
+
+        if (!ticket_code) {
+            return res.status(400).json({ error: "Se requiere el código del boleto." });
+        }
+
+        // Consultar la información completa del boleto desde la vista `ticketfullinfo`
+        const { data, error } = await supabase
+            .from("ticketfullinfo") // Asegúrate de que esta sea la tabla correcta
+            .select("category_name, category_price, workgroup_id, event_name") // Solo seleccionamos los campos necesarios
+            .eq("code", ticket_code)  // Filtrar por el código del boleto
+            .single(); // Obtén solo un resultado, ya que 'ticket_code' debería ser único
+
+        if (error || !data) {
+            return res.status(404).json({ error: "Boleto no encontrado." });
+        }
+
+        const { category_name, category_price, workgroup_id, event_name } = data;
+
+        // Crear una sesión de pago con Stripe
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'mxn',
+                        product_data: {
+                            name: `${category_name} - ${event_name}`, // Nombre del boleto + evento
+                        },
+                        unit_amount: Math.round(category_price * 100), // Convertir a centavos
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            success_url: `${process.env.CLIENT_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.CLIENT_URL}/cancel`,
+            metadata: {
+                user_id,
+                workgroup_id, // Se extrae desde la base de datos
+                ticket_code // Guardamos el código del boleto en metadata
+            }
+        });
+
+        // Responder con la URL de Stripe Checkout
+        res.json({ url: session.url });
+
+    } catch (error) {
+        console.error('Error al crear la sesión de pago:', error);
+        res.status(500).json({ error: 'Error al crear la sesión de pago' });
+    }
+});
+
+/***************************************************************
+ *                 WEBHOOK PARA SESIONES STRIPE
+ * ************************************************************/
+app.post('/webhook', express.raw({ type: 'application/json' }), (request, response) => {
+    let event = request.body;
+    switch (event.type) {
+        case 'payment_intent.succeeded':
+            const paymentIntent = event.data.object;
+            console.log(`PaymentIntent for ${paymentIntent.amount} was successful!`);
+            // Then define and call a method to handle the successful payment intent.
+            // handlePaymentIntentSucceeded(paymentIntent);
+            break;
+        case 'payment_method.attached':
+            const paymentMethod = event.data.object;
+            // Then define and call a method to handle the successful attachment of a PaymentMethod.
+            // handlePaymentMethodAttached(paymentMethod);
+            break;
+        default:
+            // Unexpected event type
+            console.log(`Unhandled event type ${event.type}.`);
+    }
+    response.send();
+});
+
+/***************************************************************
+ *                 PRE REGISTRO DE ENTRADAS
+ * ************************************************************/
+app.post('/preregister-user-ticket', async (req, res) => {
+    const { user_id, ticket_code } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO user_ticket (user_id, ticket_code) VALUES ($1, $2) RETURNING *',
+            [user_id, ticket_code]
+        );
+        res.json({ message: 'Registro creado exitosamente', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+/***************************************************************
+ *                   REGISTRO DE PAGO
+ * ************************************************************/
+app.post('/register-payment', async (req, res) => {
+    const { user_id, event_id, ticket_code, amount } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO payments (user_id, event_id, ticket_code, amount) VALUES ($1, $2, $3, $4) RETURNING *',
+            [user_id, event_id, ticket_code, amount]
+        );
+        res.json({ message: 'registro de pago pendiente creado exitosamente', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+/***************************************************************
+ *                   CERRAR SESIÓN GLOBAL
+ * ************************************************************/
+app.post('/logout', (req, res) => {
+    // Eliminar la cookie de sesión
+    res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production", // Solo en producción
+        sameSite: "Strict",
+        path: "/", // Asegúrate de que la ruta sea la correcta
+    });
+
+    // Enviar una respuesta de éxito
+    res.status(200).json({ message: "Sesión cerrada correctamente" });
 });
 
 /******************************************************************************/
