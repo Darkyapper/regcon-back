@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken'); 
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
 const helmet = require('helmet');
@@ -32,7 +32,7 @@ const upload = multer({
 });
 
 
-const allowedOrigins = ['http://localhost:5173', 'https://toolregcon.vercel.app']; 
+const allowedOrigins = ['http://localhost:5173', 'https://toolregcon.vercel.app'];
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -101,7 +101,7 @@ const loginLimiter = rateLimit({
 const authenticateToken = (req, res, next) => {
     try {
         const authHeader = req.headers['authorization'];
-        const tokenFromHeader = authHeader && authHeader.split(' ')[1]; 
+        const tokenFromHeader = authHeader && authHeader.split(' ')[1];
         const tokenFromCookie = req.cookies.token;
         const token = tokenFromHeader || tokenFromCookie;
 
@@ -166,7 +166,7 @@ app.get('/auth/status', authenticateToken, (req, res) => {
 
 app.get('/auth/me', authenticateToken, (req, res) => {
     /*console.log("Cookies recibidas en /auth/me:", req.cookies);*/
-    
+
     const token = req.cookies.token; // Obtener el token desde la cookie
     if (!token) {
         return res.status(401).json({ authenticated: false, error: "No autorizado, token no encontrado" });
@@ -174,12 +174,12 @@ app.get('/auth/me', authenticateToken, (req, res) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        res.json({ 
-            authenticated: true, 
+        res.json({
+            authenticated: true,
             token,
-            user_id: decoded.id, 
-            workgroup_id: decoded.workgroup_id, 
-            role_id: decoded.role_id 
+            user_id: decoded.id,
+            workgroup_id: decoded.workgroup_id,
+            role_id: decoded.role_id
         });
     } catch (error) {
         res.status(401).json({ authenticated: false, error: "Token inválido" });
@@ -275,11 +275,11 @@ app.get('/users/:id', async (req, res) => {
 });
 
 app.post('/users', async (req, res) => {
-    const { first_name, last_name, email, phone, password, birthday} = req.body;
+    const { first_name, last_name, email, phone, password, birthday } = req.body;
 
     if (!password || password.length < 8) {
-        return res.status(400).json({ 
-            error: 'La contraseña es requerida y debe tener al menos 8 caracteres.' 
+        return res.status(400).json({
+            error: 'La contraseña es requerida y debe tener al menos 8 caracteres.'
         });
     }
 
@@ -293,9 +293,9 @@ app.post('/users', async (req, res) => {
             [first_name, last_name, email, phone, hashedPassword, birthday]
         );
 
-        res.json({ 
-            message: 'Usuario registrado exitosamente.', 
-            data: rows[0] 
+        res.json({
+            message: 'Usuario registrado exitosamente.',
+            data: rows[0]
         });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -341,11 +341,11 @@ app.delete('/users/:id', async (req, res) => {
  *                CONTROL DE EVENTOS SIN WORKGROUP
  * ************************************************************/
 app.post('/events', async (req, res) => {
-    const { name, event_date, location, description, workgroup_id, event_category, is_online, credits_type} = req.body;
+    const { name, event_date, location, description, workgroup_id, event_category, is_online, credits_type } = req.body;
     try {
         const rows = await query(
             'INSERT INTO Events (name, event_date, location, description, workgroup_id, event_category, is_online, credits_type ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-            [name, event_date, location, description, workgroup_id, event_category, is_online, credits_type ]
+            [name, event_date, location, description, workgroup_id, event_category, is_online, credits_type]
         );
         res.json({ message: 'Success', data: rows[0] });
     } catch (error) {
@@ -731,6 +731,7 @@ app.get('/event-categories', async (req, res) => {
     }
 });
 
+
 /***************************************************************
  *                CONTROL DE TICKECTS CATEGORIES
  * ************************************************************/
@@ -1038,6 +1039,17 @@ app.get('/ticket-view-code/:code', async (req, res) => {
     }
 });
 
+app.get('/ticket-list/:code', async (req, res) => {
+    const { code } = req.params;
+
+    try {
+        const rows = await query('SELECT * FROM TicketFullInfo WHERE ticket_category_id = $1', [code]);
+        if (rows.length === 0) return res.status(404).json({ message: 'Esta categoria de boletos no existe.' });
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.get('/ticket-view/:code', async (req, res) => {
     const workgroupId = req.query.workgroup_id; // Obtener el workgroup_id de la consulta
@@ -1466,13 +1478,13 @@ app.post('/admin-login', loginLimiter, async (req, res) => {
 
         // Crear un token con información extra
         const token = jwt.sign(
-            { 
-                id: admin[0].id, 
-                userType: "admin", 
-                workgroup_id, 
-                role_id 
+            {
+                id: admin[0].id,
+                userType: "admin",
+                workgroup_id,
+                role_id
             },
-            process.env.JWT_SECRET, 
+            process.env.JWT_SECRET,
             { expiresIn: '8h' }
         );
 
@@ -1484,12 +1496,12 @@ app.post('/admin-login', loginLimiter, async (req, res) => {
         });
 
         // Enviar el token en el cuerpo de la respuesta (para móvil)
-        res.json({ 
-            message: 'Inicio de sesión exitoso', 
+        res.json({
+            message: 'Inicio de sesión exitoso',
             token, // Envía el token aquí
-            workgroup_id, 
-            role_id, 
-            user_id: admin[0].id 
+            workgroup_id,
+            role_id,
+            user_id: admin[0].id
         });
     } catch (error) {
         console.error(error);
@@ -1570,8 +1582,8 @@ app.get('/eventattendancesummary', async (req, res) => {
 
     try {
         // Composición de la consulta
-        const queryText = 'SELECT * FROM eventattendancesummary WHERE workgroup_id = $1' + 
-                          (eventId ? ' AND event_id = $2' : '');
+        const queryText = 'SELECT * FROM eventattendancesummary WHERE workgroup_id = $1' +
+            (eventId ? ' AND event_id = $2' : '');
         const queryParams = eventId ? [workgroupId, eventId] : [workgroupId];
 
         const rows = await query(queryText, queryParams);
@@ -1691,11 +1703,11 @@ app.post('/user-login', loginLimiter, async (req, res) => {
 
         // Incluir más datos en el token si es necesario
         const token = jwt.sign(
-            { 
-                id: user[0].id, 
+            {
+                id: user[0].id,
                 userType: "user"
             },
-            process.env.JWT_SECRET, 
+            process.env.JWT_SECRET,
             { expiresIn: '8h' }
         );
 
@@ -1707,9 +1719,9 @@ app.post('/user-login', loginLimiter, async (req, res) => {
         });
 
         // Responder con el token (para apps móviles)
-        res.json({ 
-            message: 'Inicio de sesión exitoso', 
-            token, 
+        res.json({
+            message: 'Inicio de sesión exitoso',
+            token,
             user_id: user[0].id,
             first_name: user[0].first_name,
             last_name: user[0].last_name,
@@ -1842,78 +1854,62 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Error al crear la sesión de pago' });
     }
 });
+
 /***************************************************************
- *                       EVENTOS
+ *                 WEBHOOK PARA SESIONES STRIPE
  * ************************************************************/
-/*app.get("/all-event", async (req, res) => {
+app.post('/webhook', express.raw({ type: 'application/json' }), (request, response) => {
+    let event = request.body;
+    switch (event.type) {
+        case 'payment_intent.succeeded':
+            const paymentIntent = event.data.object;
+            console.log(`PaymentIntent for ${paymentIntent.amount} was successful!`);
+            // Then define and call a method to handle the successful payment intent.
+            // handlePaymentIntentSucceeded(paymentIntent);
+            break;
+        case 'payment_method.attached':
+            const paymentMethod = event.data.object;
+            // Then define and call a method to handle the successful attachment of a PaymentMethod.
+            // handlePaymentMethodAttached(paymentMethod);
+            break;
+        default:
+            // Unexpected event type
+            console.log(`Unhandled event type ${event.type}.`);
+    }
+    response.send();
+});
+
+/***************************************************************
+ *                 PRE REGISTRO DE ENTRADAS
+ * ************************************************************/
+app.post('/preregister-user-ticket', async (req, res) => {
+    const { user_id, ticket_code } = req.body;
     try {
-        // Parámetros de consulta
-        const limit = parseInt(req.query.limit) || 10;
-        const offset = parseInt(req.query.offset) || 0;
-        const categoryId = req.query.category_id;
-        const workgroupId = req.query.workgroup_id;
-        const isOnline = req.query.is_online;
-        const date = req.query.date;
-        const nearest = req.query.nearest; // Si es true, ordenará por la fecha más cercana
-
-        // Construir la consulta SQL dinámicamente
-        let queryText = "SELECT * FROM event_details WHERE 1=1"; // WHERE 1=1 permite añadir condiciones dinámicamente
-        let queryParams = [];
-
-        if (categoryId) {
-            queryText += " AND category_id = $" + (queryParams.length + 1);
-            queryParams.push(categoryId);
-        }
-
-        if (workgroupId) {
-            queryText += " AND workgroup_id = $" + (queryParams.length + 1);
-            queryParams.push(workgroupId);
-        }
-
-        if (isOnline) {
-            queryText += " AND is_online = $" + (queryParams.length + 1);
-            queryParams.push(isOnline);
-        }
-
-        if (date) {
-            queryText += " AND event_date::DATE = $" + (queryParams.length + 1); // Convertir a DATE para que compare sin hora
-            queryParams.push(date);
-        }
-
-        // Ordenamiento por fecha más cercana
-        if (nearest === "true") {
-            queryText += " ORDER BY event_date ASC";
-        } else {
-            queryText += " ORDER BY event_id";
-        }
-
-        // Agregar paginación
-        queryText += " LIMIT $" + (queryParams.length + 1) + " OFFSET $" + (queryParams.length + 2);
-        queryParams.push(limit, offset);
-
-        // Ejecutar la consulta
-        const rows = await query(queryText, queryParams);
-
-        if (!rows || rows.length === 0) {
-            return res.status(404).json({ message: "No se encontraron eventos." });
-        }
-
-        res.json({
-            message: "Success",
-            data: rows,
-            pagination: {
-                limit: limit,
-                offset: offset,
-                next_offset: offset + limit
-            }
-        });
+        const rows = await query(
+            'INSERT INTO user_ticket (user_id, ticket_code) VALUES ($1, $2) RETURNING *',
+            [user_id, ticket_code]
+        );
+        res.json({ message: 'Registro creado exitosamente', data: rows[0] });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(400).json({ error: error.message });
     }
 });
-*/
 
-
+/***************************************************************
+ *                   REGISTRO DE PAGO
+ * ************************************************************/
+app.post('/register-payment', async (req, res) => {
+    const { user_id, event_id, ticket_code, amount } = req.body;
+    try {
+        const rows = await query(
+            'INSERT INTO payments (user_id, event_id, ticket_code, amount) VALUES ($1, $2, $3, $4) RETURNING *',
+            [user_id, event_id, ticket_code, amount]
+        );
+        res.json({ message: 'registro de pago pendiente creado exitosamente', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
 
 /***************************************************************
  *                   CERRAR SESIÓN GLOBAL
