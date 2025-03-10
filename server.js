@@ -818,20 +818,6 @@ app.get('/ticket-categories/:id', async (req, res) => {
     }
 });
 
-/*app.put('/ticket-categories/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, price, description, workgroup_id } = req.body;
-    try {
-        const rows = await query(
-            `UPDATE TicketCategories SET name = $1, price = $2, description = $3, workgroup_id = $4 WHERE id = $5 RETURNING *`,
-            [name, price, description, workgroup_id, id]
-        );
-        if (rows.length === 0) return res.status(404).json({ message: 'Ticket category not found' });
-        res.json({ message: 'Ticket category updated successfully', data: rows[0] });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});*/
 
 app.delete('/ticket-categories/:id', async (req, res) => {
     const { id } = req.params;
