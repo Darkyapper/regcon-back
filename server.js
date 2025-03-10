@@ -12,7 +12,7 @@ const rateLimit = require('express-rate-limit');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { createClient } = require('@supabase/supabase-js');
 
-
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -514,17 +514,20 @@ app.put('/events/:id/update-image', upload.single('image'), async (req, res) => 
             return res.status(400).json({ error: 'No se ha enviado ninguna imagen' });
         }
 
-        // Convierte la imagen a Base64 directamente desde el buffer
-        const imageBase64 = req.file.buffer.toString('base64');
+        // Crea un objeto FormData y agrega la imagen
+        const formData = new FormData();
+        formData.append('image', req.file.buffer.toString('base64'));
 
         // Sube la nueva imagen a ImgBB
         const imgbbApiKey = process.env.IMGBB_API_KEY;
-        const response = await axios.post('https://api.imgbb.com/1/upload', null, {
+        const response = await axios.post('https://api.imgbb.com/1/upload', formData, {
             params: {
                 key: imgbbApiKey,
-                image: imageBase64
             },
-            timeout: 10000 // Aumenta el timeout a 10 segundos
+            headers: {
+                ...formData.getHeaders(), // Añade las cabeceras necesarias para FormData
+            },
+            timeout: 10000, // Aumenta el timeout a 10 segundos
         });
 
         if (!response.data.success) {
