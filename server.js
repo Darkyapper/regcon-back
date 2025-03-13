@@ -386,7 +386,7 @@ app.get('/events', async (req, res) => {
     }
 });
 
-app.get('/events', async (req, res) => {
+app.get('/my-events', authenticateToken, async (req, res) => {
     const { workgroup_id, limit, offset } = req.query; // Obtén los parámetros de la consulta
 
     try {
@@ -1415,11 +1415,11 @@ app.get('/admin/:id', async (req, res) => {
 
 
 app.post('/admin', async (req, res) => {
-    const { first_name, last_name, email, phone, description, password } = req.body;
+    const { first_name, last_name, email, phone, password } = req.body;
     try {
         const rows = await query(
-            'INSERT INTO Admin (first_name, last_name, email, phone, description, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [first_name, last_name, email, phone, description, password]
+            'INSERT INTO Admin (first_name, last_name, email, phone, password) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [first_name, last_name, email, phone, password]
         );
         res.json({ message: 'Admin created successfully', data: rows[0] });
     } catch (error) {
