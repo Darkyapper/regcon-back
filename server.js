@@ -396,9 +396,9 @@ app.get('/my-events', authenticateToken, async (req, res) => {
 
         // Consulta SQL con paginación y filtro por workgroup_id
         const queryText = `
-            SELECT * FROM Events 
+            SELECT * FROM event_details 
             WHERE workgroup_id = $1 
-            ORDER BY id 
+            ORDER BY event_id
             LIMIT $2 OFFSET $3
         `;
         const queryParams = [workgroup_id, paginationLimit, paginationOffset];
