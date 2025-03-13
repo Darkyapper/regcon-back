@@ -392,7 +392,7 @@ app.get('/my-events', authenticateToken, async (req, res) => {
     try {
         // Convertir limit y offset a números (con valores por defecto)
         const paginationLimit = parseInt(limit) || 10; // Por defecto, 100 registros por página
-        const paginationOffset = parseInt(offset) || 0; // Por defecto, empieza desde el primer registro
+        const paginationOffset = parseInt(offset) || 0;
 
         // Consulta SQL con paginación y filtro por workgroup_id
         const queryText = `
