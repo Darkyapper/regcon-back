@@ -1790,27 +1790,40 @@ app.put('/users/:user_id/preferences', async (req, res) => {
 // Crear una sesión de pago (Stripe Checkout)
 app.post('/create-checkout-session', authenticateToken, async (req, res) => {
     try {
-        const { user_id } = req.user;  // El usuario viene del token
-        const { ticket_code } = req.body;  // Se envía en el body el código del boleto a comprar
+        const { user_id } = req.user;  // Usuario autenticado
+        const { payment_id } = req.body;  // Se recibe el ID del pago registrado en la BD
 
-        if (!ticket_code) {
-            return res.status(400).json({ error: "Se requiere el código del boleto." });
+        if (!payment_id) {
+            return res.status(400).json({ error: "Se requiere el ID del pago." });
         }
 
-        // Consultar la información completa del boleto desde la vista `ticketfullinfo`
-        const { data, error } = await supabase
-            .from("ticketfullinfo") // Asegúrate de que esta sea la tabla correcta
-            .select("category_name, category_price, workgroup_id, event_name") // Solo seleccionamos los campos necesarios
-            .eq("code", ticket_code)  // Filtrar por el código del boleto
-            .single(); // Obtén solo un resultado, ya que 'ticket_code' debería ser único
+        // Obtener información del pago y el boleto desde la base de datos
+        const { data: paymentData, error: paymentError } = await supabase
+            .from("payments")
+            .select("ticket_code, amount")
+            .eq("id", payment_id)
+            .single();
 
-        if (error || !data) {
+        if (paymentError || !paymentData) {
+            return res.status(404).json({ error: "Pago no encontrado." });
+        }
+
+        const { ticket_code, amount } = paymentData;
+
+        // Obtener la información del boleto
+        const { data: ticketData, error: ticketError } = await supabase
+            .from("ticketfullinfo")
+            .select("category_name, category_price, workgroup_id, event_name")
+            .eq("code", ticket_code)
+            .single();
+
+        if (ticketError || !ticketData) {
             return res.status(404).json({ error: "Boleto no encontrado." });
         }
 
-        const { category_name, category_price, workgroup_id, event_name } = data;
+        const { category_name, category_price, workgroup_id, event_name } = ticketData;
 
-        // Crear una sesión de pago con Stripe
+        // Crear una sesión de pago en Stripe
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [
@@ -1818,31 +1831,33 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
                     price_data: {
                         currency: 'mxn',
                         product_data: {
-                            name: `${category_name} - ${event_name}`, // Nombre del boleto + evento
+                            name: `${category_name} - ${event_name}`, 
                         },
-                        unit_amount: Math.round(category_price * 100), // Convertir a centavos
+                        unit_amount: Math.round(category_price * 100), 
                     },
                     quantity: 1,
                 },
             ],
             mode: 'payment',
-            success_url: `${process.env.CLIENT_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.CLIENT_URL}/cancel`,
+            success_url: `${process.env.CLIENT_URL}/success-payment?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.CLIENT_URL}/cancel-payment`,
             metadata: {
                 user_id,
-                workgroup_id, // Se extrae desde la base de datos
-                ticket_code // Guardamos el código del boleto en metadata
+                payment_id, // Se asocia el pago a la sesión
+                workgroup_id, 
+                ticket_code 
             }
         });
 
         // Responder con la URL de Stripe Checkout
-        res.json({ url: session.url });
+        res.json({ success: true, url: session.url });
 
     } catch (error) {
         console.error('Error al crear la sesión de pago:', error);
         res.status(500).json({ error: 'Error al crear la sesión de pago' });
     }
 });
+
 
 /***************************************************************
  *                 WEBHOOK PARA SESIONES STRIPE
@@ -1901,11 +1916,11 @@ app.post('/register-payment', async (req, res) => {
 });
 
 app.put('/cancel-payment', async (req, res) => {
-    const { user_id, ticket_code } = req.body;
+    const { payment_id } = req.body;
     try{
         const rows = await query(
-            'UPDATE payments SET payment_status = $1 where user_id = $2 and ticket_code = $3 RETURNING *',
-            ['Canceled', user_id, ticket_code]
+            'UPDATE payments SET payment_status = $1 where id = $2 RETURNING *',
+            ['Canceled', payment_id]
         );
         res.json({ message: 'Se ha cancelado el pago con éxito', data: rows[0] });
     } catch (error) {
