@@ -1900,6 +1900,19 @@ app.post('/register-payment', async (req, res) => {
     }
 });
 
+app.put('/cancel-payment', async (req, res) => {
+    const { user_id, ticket_code } = req.body;
+    try{
+        const rows = await query(
+            'UPDATE payments SET payment_status = $1 where user_id = $2 and ticket_code = $3 RETURNING *',
+            ['Canceled', user_id, ticket_code]
+        );
+        res.json({ message: 'Se ha cancelado el pago con éxito', data: rows[0] });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 /***************************************************************
  *                   CERRAR SESIÓN GLOBAL
  * ************************************************************/
