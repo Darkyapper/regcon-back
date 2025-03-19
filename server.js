@@ -426,6 +426,45 @@ app.get('/my-events', authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/my-active-events', authenticateToken, async (req, res) => {
+    const { workgroup_id, limit, offset } = req.query; // Obtén los parámetros de la consulta
+
+    try {
+        // Convertir limit y offset a números (con valores por defecto)
+        const paginationLimit = parseInt(limit) || 10; // Por defecto, 100 registros por página
+        const paginationOffset = parseInt(offset) || 0;
+
+        // Consulta SQL con paginación y filtro por workgroup_id
+        const queryText = `
+            SELECT * FROM event_details 
+            WHERE workgroup_id = $1 and status = 1
+            ORDER BY event_id
+            LIMIT $2 OFFSET $3
+        `;
+        const queryParams = [workgroup_id, paginationLimit, paginationOffset];
+
+        // Ejecutar la consulta
+        const rows = await query(queryText, queryParams);
+
+        // Verificar si hay datos
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron eventos activos para el grupo de trabajo especificado.' });
+        }
+
+        // Devolver los datos paginados
+        res.json({
+            message: 'Success',
+            data: rows,
+            pagination: {
+                limit: paginationLimit,
+                offset: paginationOffset,
+                next_offset: paginationOffset + paginationLimit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.get('/events/:id', async (req, res) => {
     const { id } = req.params;
