@@ -1023,6 +1023,56 @@ app.delete('/tickets/:code', async (req, res) => {
     }
 });
 
+/***************************************************************
+ *              VISTA DE GANANCIAS INDIVIDUALES
+ * ************************************************************/
+app.get('/revenue/:workgroup_id', authenticateToken, async (req, res) => {
+    const { workgroup_id } = req.params;
+
+    try {
+        const rows = await query('SELECT * FROM event_revenue WHERE workgroup_id = $1', [workgroup_id]);
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/revenue-individual/:event_id', authenticateToken, async (req, res) => {
+    const { event_id } = req.params;
+    const workgroup_id = req.user.workgroup_id; // Extraído del JWT
+
+    try {
+        const rows = await query(
+            'SELECT * FROM event_revenue WHERE event_id = $1 AND workgroup_id = $2', 
+            [event_id, workgroup_id]
+        );
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ 
+                message: 'No se encontraron ganancias para este evento en tu grupo de trabajo.' 
+            });
+        }
+        
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/workgroup-gains', authenticateToken, async (req, res) => {
+    const workgroup_id = req.user.workgroup_id;
+
+    try {
+        const rows = await query(
+            'SELECT * FROM workgroup_gains WHERE workgroup_id = $1',
+            [workgroup_id]
+        )
+        res.json({ message: 'Success', data: rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 /***************************************************************
  *              VISTA DE TICKETS CON INFORMACIÓN
@@ -1870,9 +1920,9 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
                     price_data: {
                         currency: 'mxn',
                         product_data: {
-                            name: `${category_name} - ${event_name}`, 
+                            name: `${category_name} - ${event_name}`,
                         },
-                        unit_amount: Math.round(category_price * 100), 
+                        unit_amount: Math.round(category_price * 100),
                     },
                     quantity: 1,
                 },
@@ -1883,8 +1933,8 @@ app.post('/create-checkout-session', authenticateToken, async (req, res) => {
             metadata: {
                 user_id,
                 payment_id, // Se asocia el pago a la sesión
-                workgroup_id, 
-                ticket_code 
+                workgroup_id,
+                ticket_code
             }
         });
 
@@ -1956,7 +2006,7 @@ app.post('/register-payment', async (req, res) => {
 
 app.put('/cancel-payment', async (req, res) => {
     const { payment_id } = req.body;
-    try{
+    try {
         const rows = await query(
             'UPDATE payments SET payment_status = $1 where id = $2 RETURNING *',
             ['Canceled', payment_id]
